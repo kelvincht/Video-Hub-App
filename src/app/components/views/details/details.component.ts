@@ -7,7 +7,7 @@ import { ManualTagsService } from '../../tags-manual/manual-tags.service';
 import type { BehaviorSubject } from 'rxjs';
 import type { ElementRef } from '@angular/core';
 import type { StarRating, ImageElement } from '../../../../../interfaces/final-object.interface';
-import type { VideoClickEmit, RightClickEmit, TagEmit, RenameFileResponse } from '../../../../../interfaces/shared-interfaces';
+import type { VideoClickEmit, RightClickEmit, TagEmit, FolderSegmentEmit, RenameFileResponse } from '../../../../../interfaces/shared-interfaces';
 
 export interface YearEmission {
   index: number;
@@ -29,6 +29,7 @@ export class DetailsComponent {
   readonly filmstripHolder = viewChild<ElementRef>('filmstripHolder');
 
   readonly filterTag = output<TagEmit>();
+  readonly filterFolder = output<FolderSegmentEmit>();
   readonly videoClick = output<VideoClickEmit>();
   readonly rightClick = output<RightClickEmit>();
   readonly sheetClick = output<void>();

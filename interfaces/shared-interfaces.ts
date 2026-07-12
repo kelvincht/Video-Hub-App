@@ -60,6 +60,11 @@ export interface TagEmit {
   event: PointerEvent;
 }
 
+export interface FolderSegmentEmit {
+  segment: string; // a single folder name from a video's path, e.g. "abc" from `/abc/def`
+  event: PointerEvent;
+}
+
 export interface TagEmission {
   index: number;
   tag: string;

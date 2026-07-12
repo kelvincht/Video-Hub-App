@@ -10,7 +10,7 @@ import { ImageElementService } from './../../services/image-element.service';
 import { ManualTagsService } from '../tags-manual/manual-tags.service';
 
 import type { StarRating, ImageElement } from '../../../../interfaces/final-object.interface';
-import type { TagEmit, RenameFileResponse } from '../../../../interfaces/shared-interfaces';
+import type { TagEmit, FolderSegmentEmit, RenameFileResponse } from '../../../../interfaces/shared-interfaces';
 
 import { SettingsButtons } from '../../common/settings-buttons';
 
@@ -27,6 +27,7 @@ export class MetaComponent implements OnInit, OnDestroy {
   readonly videoNotes = viewChild<ElementRef>('videoNotes');
 
   readonly filterTag = output<TagEmit>();
+  readonly filterFolder = output<FolderSegmentEmit>();
 
   @Input() video: ImageElement;
 
@@ -116,6 +117,13 @@ export class MetaComponent implements OnInit, OnDestroy {
 
   filterThisTag(event: TagEmit) {
     this.filterTag.emit(event);
+  }
+
+  /**
+   * Folder names making up this video's path, e.g. ['abc', 'def'] for `/abc/def`
+   */
+  get pathSegments(): string[] {
+    return (this.video.partialPath || '').split('/').filter(Boolean);
   }
 
   removeThisTag(tag: string) {

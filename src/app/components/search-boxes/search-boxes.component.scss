@@ -1,0 +1,13 @@
+.recursive-checkbox-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  margin: 2px 0 4px 4px;
+  opacity: 0.8;
+  user-select: none;
+
+  input[type=checkbox] {
+    margin-right: 4px;
+  }
+}

@@ -22,6 +22,7 @@ export class FileSearchPipe implements PipeTransform {
    * @param manualTags      {boolean}
    * @param autoFileTags    {boolean}
    * @param autoFolderTags  {boolean}
+   * @param recursive       {boolean} folder search only: match subfolders too, not just the exact folder
    */
   transform(
     finalArray: ImageElement[],
@@ -32,7 +33,8 @@ export class FileSearchPipe implements PipeTransform {
     exclude?: boolean,
     manualTags?: boolean,
     autoFileTags?: boolean,
-    autoFolderTags?: boolean
+    autoFolderTags?: boolean,
+    recursive?: boolean
   ): ImageElement[] {
 
     if (arrOfStrings.length === 0) {
@@ -41,7 +43,9 @@ export class FileSearchPipe implements PipeTransform {
 
       return finalArray.filter((item) => {
 
-        // exact prefix match
+        // exact prefix match -- used by the "view folder" right-click action
+        // (`showOnlyThisFolderNow`), which passes the video's full `partialPath`
+        // as a single term; unrelated to the `recursive` flag below
         if (arrOfStrings[0].startsWith('/')) {
           return item.partialPath.startsWith(arrOfStrings[0]);
         }
@@ -52,7 +56,19 @@ export class FileSearchPipe implements PipeTransform {
 
           let searchString = '';
           if (searchType === 'folder') {
-            searchString = item.partialPath;
+            // exact whole-segment match, not a blind substring check --
+            // "abc" only matches a folder literally named "abc", not "xabcx".
+            // Recursive: "abc" anywhere in the path (an ancestor at any
+            // depth). Non-recursive: "abc" must be the direct parent folder.
+            const segments = item.partialPath.split('/').filter(Boolean);
+            const term = element.toLowerCase();
+            const isMatch = recursive
+              ? segments.some((s) => s.toLowerCase() === term)
+              : segments.length > 0 && segments[segments.length - 1].toLowerCase() === term;
+            if (isMatch) {
+              matchFound++;
+            }
+            return;
 
           } else if (searchType === 'file') {
             searchString = item.fileName;
