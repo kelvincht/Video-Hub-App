@@ -328,6 +328,12 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
   allFinishedScanning = true;
 
+  // sourceIndexes whose NEXT 'all-files-found-in-dir' result should also remove
+  // missing entries from the index -- set right before a rescan is triggered
+  // with the "remove missing" checkbox checked, consumed (one-shot) when that
+  // scan's results come back
+  pendingRemoveMissingSources = new Set<number>();
+
   lastRenamedFileHack: ImageElement;
 
   remoteSettings: RemoteSettings;
@@ -336,6 +342,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
   // Behavior Subjects for IPC events:
 
+  filesRemovedFromIndexBehaviorSubject: BehaviorSubject<number> = new BehaviorSubject(undefined);
   inputSorceChosenBehaviorSubject: BehaviorSubject<string> = new BehaviorSubject(undefined);
   numberScreenshotsDeletedBehaviorSubject: BehaviorSubject<number> = new BehaviorSubject(undefined);
   oldFolderReconnectedBehaviorSubject: BehaviorSubject<{source: number, path: string}> = new BehaviorSubject(undefined);
@@ -625,6 +632,13 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.sourceFolderService.addCurrentScanning(sourceIndex);
     });
 
+    // Fired once 'save-vha-file-now' (triggered by the "remove missing on
+    // rescan" feature) has actually written the removal to disk -- only now
+    // is it safe to reclaim the removed entries' cache files.
+    this.electronService.ipcRenderer.on('vha-file-saved-now', () => {
+      this.electronService.ipcRenderer.send('clean-old-thumbnails', this.imageElementService.imageElements);
+    });
+
     // WIP -- delete any videos no longer found on the hard drive!
     this.electronService.ipcRenderer.on('all-files-found-in-dir', (event, sourceIndex: number, allFilesMap: Map<string, 1>) => {
       // console.log('all files returning:');
@@ -639,25 +653,55 @@ export class HomeComponent implements OnInit, AfterViewInit {
         this.cd.detectChanges();
       }
 
-      const rootFolder: string = this.sourceFolderService.selectedSourceFolder[sourceIndex].path;
+      // Only remove missing entries when the user explicitly opted in for
+      // THIS rescan (the "remove missing" checkbox, statistics.component) --
+      // otherwise leave existing entries untouched even if their file is
+      // gone, matching the safe default (nothing was ever removed before this
+      // feature existed).
+      if (this.pendingRemoveMissingSources.has(sourceIndex)) {
+        this.pendingRemoveMissingSources.delete(sourceIndex);
 
-      let somethingDeleted = false;
+        const rootFolder: string = this.sourceFolderService.selectedSourceFolder[sourceIndex].path;
 
-      this.imageElementService.imageElements
-        // tslint:disable-next-line:triple-equals
-        .filter((element: ImageElement) => { return element.inputSource == sourceIndex; })
-        // notice the loosey-goosey comparison! this is because number  ^^  string comparison happening here!
-        .forEach((element: ImageElement) => {
-          // console.log(element.fileName);
-          if (!allFilesMap.has(path.join(rootFolder, element.partialPath, element.fileName))) {
-            console.log('deleting: ', element.fileName);
-            element.deleted = true;
-            somethingDeleted = true;
+        let numberRemoved = 0;
+
+        this.imageElementService.imageElements
+          // tslint:disable-next-line:triple-equals
+          .filter((element: ImageElement) => { return element.inputSource == sourceIndex && !element.deleted; })
+          // notice the loosey-goosey comparison! this is because number  ^^  string comparison happening here!
+          // (`!element.deleted` also excludes entries a PREVIOUS rescan already
+          // removed -- they linger in this array marked `deleted` for the rest
+          // of the session, and without this guard they'd get re-marked and
+          // re-counted here every subsequent rescan, inflating the "removed"
+          // count and needlessly re-triggering a save + cache cleanup)
+          .forEach((element: ImageElement) => {
+            if (!allFilesMap.has(path.join(rootFolder, element.partialPath, element.fileName))) {
+              console.log('deleting: ', element.fileName);
+              element.deleted = true;
+              numberRemoved++;
+            }
+          });
+
+        if (numberRemoved > 0) {
+          this.deletePipeTrigger = !this.deletePipeTrigger;
+          // actually persist the removal on next save -- previously this never
+          // happened, so "missing" entries silently reverted on next launch
+          this.imageElementService.finalArrayNeedsSaving = true;
+
+          // Save to disk right now (rather than waiting for the app to close)
+          // and only delete the removed entries' generated thumbnails/
+          // filmstrips/clips once that save is confirmed -- so a crash between
+          // the two steps can never leave cache files deleted for an entry
+          // that's still listed in the saved index.
+          const finalObjectToSave = this.getFinalObjectForSaving();
+          if (finalObjectToSave !== null) {
+            this.electronService.ipcRenderer.send('save-vha-file-now', finalObjectToSave);
+            this.imageElementService.finalArrayNeedsSaving = false;
           }
-        });
+        }
 
-      if (somethingDeleted) {
-        this.deletePipeTrigger = !this.deletePipeTrigger;
+        this.filesRemovedFromIndexBehaviorSubject.next(numberRemoved);
+        this.filesRemovedFromIndexBehaviorSubject.next(undefined); // allways remove right away
       }
 
     });
@@ -984,6 +1028,20 @@ export class HomeComponent implements OnInit, AfterViewInit {
       }
     });
     this.deletePipeTrigger = !this.deletePipeTrigger;
+  }
+
+  /**
+   * The "remove missing" checkbox was checked when a rescan was triggered for
+   * this source -- mark it so the next 'all-files-found-in-dir' result for
+   * this source actually removes entries whose file is no longer found
+   * @param sourceIndex
+   */
+  handleRescanShouldRemoveMissing(sourceIndex: number): void {
+    // `sourceIndex` may actually arrive as a string here (statistics.component's
+    // template passes `item.key` from Angular's KeyValuePipe, which always
+    // returns string keys even for a numeric-keyed object) -- normalize so the
+    // strict Set lookup in the 'all-files-found-in-dir' handler below matches.
+    this.pendingRemoveMissingSources.add(Number(sourceIndex));
   }
 
   /**
