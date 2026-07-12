@@ -78,10 +78,27 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   /**
    * Open a particular video file clicked inside Angular at particular timestamp
    */
-  ipc.on('open-media-file-at-timestamp', (event, executablePath, fullFilePath: string, args: string) => {
+  ipc.on('open-media-file-at-timestamp', (event, executablePath, fullFilePath: string, args: string, reuseInstance: boolean) => {
     fs.access(fullFilePath, fs.constants.F_OK, (err: any) => {
       if (!err) {
-        const cmdline: string = `"${path.normalize(executablePath)}" "${path.normalize(fullFilePath)}" ${args}`;
+        let cmdline: string;
+
+        if (GLOBALS.macVersion && reuseInstance) {
+          // Launching the raw binary inside `Contents/MacOS/` directly (as done
+          // below) bypasses macOS's own single-instance app tracking -- every
+          // click becomes a fully independent process, so they pile up and have
+          // to be killed one by one. Routing through `open -a` with the
+          // containing `.app` bundle reuses an already-running instance instead
+          // (confirmed: same PID across repeated launches with different files,
+          // vs. a new PID each time via raw exec). Only requested for players
+          // this is known to work with (VLC/IINA) and only when the user hasn't
+          // unchecked the Settings checkbox for it.
+          const appBundlePath: string = path.normalize(executablePath).replace(/\/Contents\/MacOS\/.*$/, '');
+          cmdline = `open -a "${appBundlePath}" "${path.normalize(fullFilePath)}" --args ${args}`;
+        } else {
+          cmdline = `"${path.normalize(executablePath)}" "${path.normalize(fullFilePath)}" ${args}`;
+        }
+
         console.log(cmdline);
         exec(cmdline);
       } else {

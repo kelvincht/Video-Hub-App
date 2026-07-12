@@ -89,6 +89,18 @@
     }
     </div>
 
+    <!-- REUSE EXISTING WINDOW (VLC / IINA only) -->
+
+  @if (appState.preferredVideoPlayer && isSpecialPlayer(appState.preferredVideoPlayer)) {
+    <label
+      class="reuse-video-player-instance-label"
+      title="{{ 'SETTINGS.reuseVideoPlayerInstanceMoreInfo' | translate }}"
+    >
+      <input type="checkbox" [(ngModel)]="appState.reuseVideoPlayerInstance">
+      {{ 'SETTINGS.reuseVideoPlayerInstance' | translate }}
+    </label>
+  }
+
     <!-- LAUNCH ARGUMENTS -->
 
   @if (appState.preferredVideoPlayer) {
