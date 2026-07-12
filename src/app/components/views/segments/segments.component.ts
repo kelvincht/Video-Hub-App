@@ -296,7 +296,9 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.videoClick.emit({
       mouseEvent: <PointerEvent>event,
       doubleClick: doubleClick,
-      timeSeconds: idx !== undefined ? this.segmentSourceTime(idx) : undefined,
+      // first tile always starts from the beginning; other tiles open at
+      // their own segment's timestamp
+      timeSeconds: idx === undefined ? undefined : (idx === 0 ? 0 : this.segmentSourceTime(idx)),
     });
   }
 

@@ -34,6 +34,12 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
 
   @Input() video: ImageElement;
 
+  // when `true`, clicking always opens the video from the start regardless of
+  // which screenshot is currently showing/hover-scrubbed (used by the main
+  // thumbnail grid only -- the Details tray/view usages of this component
+  // leave this at its default `false` to keep their existing timestamp-click
+  // support)
+  readonly alwaysPlayFromStart = input<boolean>(false);
   readonly compactView = input<boolean>();
   readonly connected = input<boolean>();
   readonly darkMode = input<boolean>();

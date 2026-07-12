@@ -127,8 +127,8 @@
     (mouseenter)="mouseEntered()"
     (mouseleave)="mouseLeft()"
 
-    (click)="   videoClick.emit({ mouseEvent: $event, thumbIndex: indexToShow })"
-    (dblclick)="videoClick.emit({ mouseEvent: $event, thumbIndex: indexToShow, doubleClick: true })"
+    (click)="   videoClick.emit({ mouseEvent: $event, thumbIndex: alwaysPlayFromStart() ? undefined : indexToShow })"
+    (dblclick)="videoClick.emit({ mouseEvent: $event, thumbIndex: alwaysPlayFromStart() ? undefined : indexToShow, doubleClick: true })"
 
     (contextmenu)="rightClick.emit({ mouseEvent: $event, item: video })"
 

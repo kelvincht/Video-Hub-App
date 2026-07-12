@@ -594,9 +594,23 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
       this.appState.preferredVideoPlayer = filePath;
 
+      // NOTE: deliberately using `process.platform` here rather than `this.macVersion`
+      // (`GLOBALS.macVersion`) -- that field is set by `main.ts` mutating the
+      // *main process's* copy of the `GLOBALS` singleton, but this renderer
+      // process `import`s the same module fresh into its own separate process,
+      // so it never actually observes that mutation and stays stuck at its
+      // hardcoded default (`false`), which silently breaks this Mac-only
+      // rewrite (and appears to affect a good deal of other `macVersion` usage
+      // in this renderer too -- worth a dedicated look separately).
+
       // Hardcode for MAC & VLC
-      if (this.macVersion && this.appState.preferredVideoPlayer.toLowerCase().includes('vlc')) {
+      if (process.platform === 'darwin' && this.appState.preferredVideoPlayer.toLowerCase().includes('vlc')) {
         this.appState.preferredVideoPlayer = '/Applications/VLC.app/Contents/MacOS/VLC';
+
+      // Hardcode for MAC & IINA -- the file picker lets the user select the `.app`
+      // bundle itself, but the actual CLI launcher is `iina-cli` inside it
+      } else if (process.platform === 'darwin' && this.appState.preferredVideoPlayer.toLowerCase().includes('iina')) {
+        this.appState.preferredVideoPlayer = '/Applications/IINA.app/Contents/MacOS/iina-cli';
       }
 
       this.cd.detectChanges();
@@ -1268,7 +1282,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
       const execPath: string = this.appState.preferredVideoPlayer;
 
       const finalArgs = `${this.getVideoPlayerArgs(execPath, time)} ${this.appState.videoPlayerArgs}`;
-      this.electronService.ipcRenderer.send('open-media-file-at-timestamp', execPath, fullPath, finalArgs);
+      const reuseInstance = this.appState.reuseVideoPlayerInstance && this.isSpecialPlayer(execPath);
+      this.electronService.ipcRenderer.send('open-media-file-at-timestamp', execPath, fullPath, finalArgs, reuseInstance);
     } else {
       this.electronService.ipcRenderer.send('open-media-file', fullPath);
     }
@@ -1280,6 +1295,18 @@ export class HomeComponent implements OnInit, AfterViewInit {
   openContainingFolderNow(): void {
     this.fullPathToCurrentFile = this.filePathService.getPathFromImageElement(this.currentRightClickedItem);
     this.openInExplorer();
+  }
+
+  /**
+   * `true` when `playerPath` looks like VLC or IINA -- the only two players
+   * that support being launched via macOS `open -a` to reuse a running
+   * instance instead of spawning a new process per click
+   * @param playerPath  full path to user's preferred video player
+   */
+  public isSpecialPlayer(playerPath: string): boolean {
+    const lowerPath = playerPath.toLowerCase();
+
+    return lowerPath.includes('vlc') || lowerPath.includes('iina');
   }
 
   /**
@@ -1300,6 +1327,9 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
       } else if (playerPath.toLowerCase().includes('pot')) {
         args = '/seek=' + time.toString();           // in seconds
+
+      } else if (playerPath.toLowerCase().includes('iina')) {
+        args = '--mpv-start=' + time.toString();      // in seconds -- iina-cli passes mpv opts via --mpv-*
 
       } else if (playerPath.toLowerCase().includes('mpv')) {
         args = '--start=' + time.toString();          // in seconds
@@ -2120,6 +2150,11 @@ export class HomeComponent implements OnInit, AfterViewInit {
       if (!AllSupportedViews.includes(settingsObject.appState.currentView)) {
         // settings.json written by a future version with a view this version doesn't know
         this.appState.currentView = 'showThumbnails';
+      }
+      if (settingsObject.appState.reuseVideoPlayerInstance === undefined) {
+        // settings.json from before this field existed -- default it on, same
+        // as a brand new AppState would get
+        this.appState.reuseVideoPlayerInstance = true;
       }
     }
     this.sortType = this.appState.currentSort;
