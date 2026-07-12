@@ -60,6 +60,7 @@ export const AppState: AppStateInterface = { // AppState is saved into `settings
   numOfFolders: 0,
   port: 3000,
   preferredVideoPlayer: '',
+  reuseVideoPlayerInstance: true,
   selectedOutputFolder: '',
   sortTagsByFrequency: false,
   videoPlayerArgs: '',
@@ -78,6 +79,7 @@ export interface AppStateInterface {
   numOfFolders: number;
   port: number;
   preferredVideoPlayer: string;
+  reuseVideoPlayerInstance: boolean; // mac only -- launch VLC/IINA via `open -a` to reuse a running instance instead of spawning a new process per click
   selectedOutputFolder: string;
   sortTagsByFrequency: boolean; // when `false` sort tags alphabetically
   videoPlayerArgs: string;

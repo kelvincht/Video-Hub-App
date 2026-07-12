@@ -66,6 +66,17 @@ export class SettingsComponent implements OnInit, OnChanges {
     }
   }
 
+  /**
+   * `true` when the chosen player path looks like VLC or IINA -- the only two
+   * players the "reuse existing window" checkbox applies to
+   * @param playerPath  full path to user's preferred video player
+   */
+  isSpecialPlayer(playerPath: string): boolean {
+    const lowerPath = playerPath.toLowerCase();
+
+    return lowerPath.includes('vlc') || lowerPath.includes('iina');
+  }
+
   editAdditionalExtensions() {
     this.editAdditional = !this.editAdditional;
     this.additionalInput = this.appState.addtionalExtensions;

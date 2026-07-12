@@ -12,6 +12,11 @@ import { createDotPlsFile, writeVhaFileToDisk } from './main-support';
 import { replaceThumbnailWithNewImage } from './main-extract';
 import { closeWatcher, startWatcher, extractAnyMissingThumbs, removeThumbnailsNotInHub } from './main-extract-async';
 
+// tracks the most recent 'open-media-file-at-timestamp' VLC-seek request, so
+// a stale staggered retry (see below) can detect it's been superseded by a
+// newer click and skip itself instead of overwriting a more recent seek
+let latestVlcSeekRequestId = 0;
+
 /**
  * Set up the listeners
  * @param ipc
@@ -78,12 +83,51 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   /**
    * Open a particular video file clicked inside Angular at particular timestamp
    */
-  ipc.on('open-media-file-at-timestamp', (event, executablePath, fullFilePath: string, args: string) => {
+  ipc.on('open-media-file-at-timestamp', (event, executablePath, fullFilePath: string, args: string, reuseInstance: boolean, time: number) => {
     fs.access(fullFilePath, fs.constants.F_OK, (err: any) => {
       if (!err) {
-        const cmdline: string = `"${path.normalize(executablePath)}" "${path.normalize(fullFilePath)}" ${args}`;
+        let cmdline: string;
+
+        if (GLOBALS.macVersion && reuseInstance) {
+          // Launching the raw binary inside `Contents/MacOS/` directly (as done
+          // below) bypasses macOS's own single-instance app tracking -- every
+          // click becomes a fully independent process, so they pile up and have
+          // to be killed one by one. Routing through `open -a` with the
+          // containing `.app` bundle reuses an already-running instance instead
+          // (confirmed: same PID across repeated launches with different files,
+          // vs. a new PID each time via raw exec). Only requested for players
+          // this is known to work with (VLC/IINA) and only when the user hasn't
+          // unchecked the Settings checkbox for it.
+          const appBundlePath: string = path.normalize(executablePath).replace(/\/Contents\/MacOS\/.*$/, '');
+          cmdline = `open -a "${appBundlePath}" "${path.normalize(fullFilePath)}" --args ${args}`;
+        } else {
+          cmdline = `"${path.normalize(executablePath)}" "${path.normalize(fullFilePath)}" ${args}`;
+        }
+
         console.log(cmdline);
         exec(cmdline);
+
+        // `open -a` re-opening a file that's already VLC's current document
+        // does NOT reliably re-apply `--start-time=` -- confirmed empirically:
+        // VLC just keeps/resumes whatever position it already had. This is
+        // exactly the common case for the Filmstrip/Details/Segments views,
+        // which repeatedly re-click different timestamps of the SAME video.
+        // Force the seek via VLC's own AppleScript "set current time" verb,
+        // which reliably works whether this was a fresh launch or an already-
+        // running reused window. Retried at a few staggered delays since a
+        // cold VLC launch isn't scriptable (or done loading the file) yet.
+        if (GLOBALS.macVersion && reuseInstance && typeof time === 'number' && executablePath.toLowerCase().includes('vlc')) {
+          const requestId = ++latestVlcSeekRequestId;
+          [400, 1000, 2000].forEach((delay) => {
+            setTimeout(() => {
+              // skip if a NEWER click has since come in -- otherwise this
+              // stale retry could overwrite a more recent seek
+              if (requestId === latestVlcSeekRequestId) {
+                exec(`osascript -e 'tell application "VLC" to set current time to ${time}'`);
+              }
+            }, delay);
+          });
+        }
       } else {
         event.sender.send('file-not-found');
       }
