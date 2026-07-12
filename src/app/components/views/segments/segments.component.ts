@@ -3,6 +3,7 @@ import { Component, NgZone, computed, effect, input, output, viewChild } from '@
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
+import { SegmentClipLoadQueueService } from './../../../services/segment-clip-load-queue.service';
 import { VideoAutoplaySchedulerService } from './../../../services/video-autoplay-scheduler.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
@@ -46,15 +47,24 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly galleryWidth = input<number>();
   readonly hubName = input<string>();
   readonly largerFont = input<boolean>();
+  readonly maxVisibleTiles = input<number>();
   readonly previewWidth = input<number>();
   readonly showFavorites = input<boolean>();
   readonly showMeta = input<boolean>();
   readonly snippetLength = input<number>();
 
-  // 16:9 tiles: fill the gallery width with all snippets by default;
-  // zooming in (fewer imgsPerRow -> larger previewWidth) enlarges tiles and the row scrolls horizontally
+  // how many tiles actually get rendered at the current zoom -- never more
+  // than `clipSnippets`, and falls back to showing everything if the caller
+  // doesn't pass `maxVisibleTiles` at all
+  readonly renderedCount = computed(() => {
+    const total = Math.max(1, this.clipSnippets() || 1);
+    const max = this.maxVisibleTiles();
+    return max ? Math.max(1, Math.min(total, max)) : total;
+  });
+
+  // 16:9 tiles: fill the gallery width with exactly `renderedCount` tiles
   readonly cellWidth = computed(() => {
-    const n = Math.max(1, this.clipSnippets() || 1);
+    const n = this.renderedCount();
     const available = Math.max(0, (this.galleryWidth() || 0) - 40 - (n - 1) * 2); // margins + 2px gaps
     return Math.max(available / n, this.previewWidth() || 0);
   });
@@ -64,10 +74,33 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.largerFont() ? Math.round(base * 1.33) : base;
   });
 
-  readonly segmentIndexes = computed(() =>
-    Array.from({ length: Math.max(0, this.clipSnippets() || 0) }, (_, i) => i));
+  /**
+   * Which snippet indices to actually render. When every snippet fits, show
+   * them all in order. Otherwise, evenly sample `renderedCount` indices
+   * across the full `[0, clipSnippets-1]` range -- always including the
+   * first and last snippet -- rather than always showing the first N (which
+   * would mean the back half of a long video is never visible without
+   * zooming out).
+   */
+  readonly segmentIndexes = computed(() => {
+    const total = Math.max(0, this.clipSnippets() || 0);
+    const shown = this.renderedCount();
+
+    if (total <= shown) {
+      return Array.from({ length: total }, (_, i) => i);
+    }
+
+    if (shown <= 1) {
+      return [0];
+    }
+
+    // standard "k evenly-spaced points across N items, including both
+    // endpoints" formula: index(i) = round(i * (N-1) / (k-1))
+    return Array.from({ length: shown }, (_, i) => Math.round(i * (total - 1) / (shown - 1)));
+  });
 
   pathToClip = '';
+  posterPath = '';
   noError = true;
 
   // when false, [src] is unbound in the template -- releases the decoder for a
@@ -75,15 +108,24 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   // virtual-scroller actually destroying it) but not actually on screen.
   isRowVisible = true;
 
+  // when false (and `isRowVisible` is true), the row is queued behind the
+  // concurrency budget -- template shows the static poster instead of the
+  // live <video> tiles until this flips true
+  canLoad = false;
+
   private cleanupFns: (() => void)[] = [];
   // cancel functions for scheduled-but-not-yet-started autoplay begins, keyed by
   // the <video> they belong to (hover-triggered playback bypasses the scheduler
   // entirely and is never tracked here)
   private pendingAutoplayStarts = new Map<HTMLVideoElement, () => void>();
+  // release function for this row's current SegmentClipLoadQueueService slot
+  // (held or queued), if any is currently outstanding
+  private releaseLoadSlot: (() => void) | undefined;
 
   constructor(
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
+    private loadQueue: SegmentClipLoadQueueService,
     private ngZone: NgZone,
     private scheduler: VideoAutoplaySchedulerService,
   ) {
@@ -119,6 +161,9 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
     this.pathToClip = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash, true);
+    // already-generated poster for the same clip -- shown while this row is
+    // queued behind the load concurrency budget, at zero extra cost
+    this.posterPath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash);
   }
 
   /**
@@ -174,6 +219,11 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       on('mouseover', (event: Event) => {
         const cell = this.asSegmentVideo(event.target);
         if (!cell) { return; }
+        // same reasoning applies to the load concurrency budget: a queued
+        // row must never make a deliberate hover wait either
+        if (!this.canLoad) {
+          this.forceAdmitLoadSlot();
+        }
         cell.video.muted = this.forceMute() || false; // real hover is a user gesture, so sound is allowed
         this.tryPlay(cell.video);
         if (this.autoplay()) {
@@ -222,8 +272,14 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
           this.eachVideo((v) => v.pause());
           this.pendingAutoplayStarts.forEach((cancel) => cancel());
           this.pendingAutoplayStarts.clear();
+          this.releaseSegmentLoadSlot();
         }
-        this.ngZone.run(() => { this.isRowVisible = isIntersecting; });
+        this.ngZone.run(() => {
+          this.isRowVisible = isIntersecting;
+          if (isIntersecting) {
+            this.requestSegmentLoadSlot();
+          }
+        });
       }, { root: scrollRoot, threshold: 0 });
       intersectionObserver.observe(holder);
       this.cleanupFns.push(() => intersectionObserver.disconnect());
@@ -235,6 +291,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cleanupFns = [];
     this.pendingAutoplayStarts.forEach((cancel) => cancel());
     this.pendingAutoplayStarts.clear();
+    this.releaseSegmentLoadSlot();
     // release decoder resources deterministically
     this.eachVideo((v) => {
       v.pause();
@@ -275,6 +332,45 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     const holder = this.segmentsHolder()?.nativeElement;
     if (!holder) { return; }
     holder.querySelectorAll('video').forEach(fn);
+  }
+
+  /**
+   * Ask `SegmentClipLoadQueueService` for a slot -- admitted immediately if
+   * under budget, otherwise queued (this row stays on the static poster,
+   * `canLoad` false, until admitted).
+   */
+  private requestSegmentLoadSlot(): void {
+    if (this.releaseLoadSlot) {
+      return; // already holding or queued for a slot
+    }
+    this.releaseLoadSlot = this.loadQueue.request(() => {
+      this.ngZone.run(() => { this.canLoad = true; });
+    });
+  }
+
+  /**
+   * Give up this row's slot (held or still queued) -- called when it stops
+   * being visible or is destroyed. `canLoad` is reset so re-entering the
+   * viewport later starts from the poster again until re-admitted.
+   */
+  private releaseSegmentLoadSlot(): void {
+    if (this.releaseLoadSlot) {
+      this.releaseLoadSlot();
+      this.releaseLoadSlot = undefined;
+    }
+    this.canLoad = false;
+  }
+
+  /**
+   * Bypass the queue entirely for a deliberate hover -- replaces any
+   * outstanding normal request with a forced admission.
+   */
+  private forceAdmitLoadSlot(): void {
+    if (this.releaseLoadSlot) {
+      this.releaseLoadSlot();
+    }
+    this.releaseLoadSlot = this.loadQueue.forceAdmit();
+    this.ngZone.run(() => { this.canLoad = true; });
   }
 
   private tryPlay(video: HTMLVideoElement): void {
