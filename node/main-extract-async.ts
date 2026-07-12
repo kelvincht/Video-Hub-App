@@ -221,6 +221,14 @@ function superFastSystemScan(inputDir: string, inputSource: number): void {
 
   GLOBALS.angularApp.sender.send('started-watching-this-dir', inputSource);
 
+  // A fresh crawl every time this fires (each manual "Rescan" click) --
+  // `allFoundFilesMap` must not accumulate stale "found" entries from a
+  // PREVIOUS scan of this same source, otherwise a file that has since been
+  // deleted/renamed would incorrectly still be reported as present here.
+  // (`alreadyInAngular`, which actually gates new-`ImageElement` creation
+  // below, is untouched -- this only affects "what's currently on disk".)
+  allFoundFilesMap.set(inputSource, new Map());
+
   metadataQueue.pause();
   thumbQueue.pause();
 

@@ -255,6 +255,7 @@
       <app-statistics
         (deleteInputSourceFiles)="deleteInputSourceFiles($event)"
         (finalArrayNeedsSaving)="imageElementService.finalArrayNeedsSaving = true"
+        (rescanShouldRemoveMissing)="handleRescanShouldRemoveMissing($event)"
         (startServerOnPort)="startServer($event)"
 
         [appState]="appState"
@@ -264,6 +265,7 @@
         [pathToVhaFile]="appState.currentVhaFile"
         [screenshotSettings]="currentScreenshotSettings"
 
+        [filesRemovedFromIndex]="filesRemovedFromIndexBehaviorSubject.asObservable()"
         [inputFolderChosen]="inputSorceChosenBehaviorSubject.asObservable()"
         [numberScreenshotsDeleted]="numberScreenshotsDeletedBehaviorSubject.asObservable()"
         [oldFolderReconnected]="oldFolderReconnectedBehaviorSubject.asObservable()"

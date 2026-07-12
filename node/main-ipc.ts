@@ -259,6 +259,27 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   });
 
   /**
+   * Snapshot the current .vha2 file before a rescan that will remove missing
+   * entries from the index -- a defensive backup, since that removal is
+   * permanent once saved. One timestamped file per call (never overwritten),
+   * stored alongside the hub's other generated data rather than next to the
+   * .vha2 file itself.
+   */
+  ipc.on('backup-vha-before-rescan', (event) => {
+    try {
+      const backupsFolder = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName, 'backups');
+      if (!fs.existsSync(backupsFolder)) {
+        fs.mkdirSync(backupsFolder, { recursive: true });
+      }
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = path.join(backupsFolder, GLOBALS.hubName + '-' + timestamp + '.vha2.bak');
+      fs.copyFileSync(GLOBALS.currentlyOpenVhaFile, backupPath);
+    } catch (err) {
+      console.log('WARNING -- failed to back up .vha2 before rescan:', err);
+    }
+  });
+
+  /**
    * Stop watching a particular folder
    */
   ipc.on('stop-watching-folder', (event, watchedFolderIndex: number) => {

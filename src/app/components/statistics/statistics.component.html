@@ -8,6 +8,19 @@
 
   <span class="stats-heading title sources">{{ 'STATISTICS.videoFolder' | translate }}</span>
 
+  @if (!removeFoldersMode) {
+    <label class="remove-missing-on-rescan-label" title="{{ 'STATISTICS.removeMissingOnRescanMoreInfo' | translate }}">
+      <input type="checkbox" [(ngModel)]="removeMissingOnRescan">
+      {{ 'STATISTICS.removeMissingOnRescan' | translate }}
+    </label>
+
+    @if (showNumberRemoved) {
+      <div class="number-of-thumbs-deleted" @metaAppear>
+        {{ 'STATISTICS.removedFromIndex' | translate }} {{ numberOfFilesRemoved | number }}
+      </div>
+    }
+  }
+
   <div class="input-sources">
 
   @for (item of inputFolders() | keyvalue | alphabetizeSourceFolders : 'value.path'; track trackByFn(i, item); let i = $index) {
