@@ -9,6 +9,7 @@ export interface FilterObject {
   conjunction: string;
   color: string;
   recursive?: boolean; // folder filters only: match subfolders too, not just the exact folder
+  strict?: boolean; // folder filters only: match the whole folder name exactly, rather than as a substring
 }
 
 export const FilterKeyNames: string[] = [
@@ -33,7 +34,8 @@ export const Filters: FilterObject[] = [
     placeholder: 'SIDEBAR.folderUnion',
     conjunction: 'SIDEBAR.or',
     color: Colors.folderUnion,
-    recursive: true
+    recursive: true,
+    strict: false
   }, {
     uniqueKey: 'folderIntersection',
     string: '',
@@ -42,7 +44,8 @@ export const Filters: FilterObject[] = [
     placeholder: 'SIDEBAR.folder',
     conjunction: 'SIDEBAR.and',
     color: Colors.folderIntersection,
-    recursive: true
+    recursive: true,
+    strict: false
   }, {
     uniqueKey: 'folderExclusion',
     string: '',
@@ -51,7 +54,8 @@ export const Filters: FilterObject[] = [
     placeholder: 'SIDEBAR.folderExclusion',
     conjunction: 'SIDEBAR.or',
     color: Colors.folderExclusion,
-    recursive: true
+    recursive: true,
+    strict: false
   }, {
     uniqueKey: 'fileUnion',
     string: '',

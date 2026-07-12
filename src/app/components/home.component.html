@@ -823,11 +823,11 @@
 
                 | returnZeroPipe : ((appState.currentView === 'showClips' || appState.currentView === 'showSegments') && currentScreenshotSettings.clipSnippets === 0)
 
-                | fileSearchPipe : filters[0].array : filters[0].bool : true  : 'folder' : false : false : false : false : filters[0].recursive
+                | fileSearchPipe : filters[0].array : filters[0].bool : true  : 'folder' : false : false : false : false : filters[0].recursive : filters[0].strict
 
-                | fileSearchPipe : filters[1].array : filters[1].bool : false : 'folder' : false : false : false : false : filters[1].recursive
+                | fileSearchPipe : filters[1].array : filters[1].bool : false : 'folder' : false : false : false : false : filters[1].recursive : filters[1].strict
 
-                | fileSearchPipe : filters[2].array : filters[2].bool : true : 'folder' : true : false : false : false : filters[2].recursive
+                | fileSearchPipe : filters[2].array : filters[2].bool : true : 'folder' : true : false : false : false : filters[2].recursive : filters[2].strict
 
                 | fileSearchPipe : filters[3].array : filters[3].bool : true  : 'file'   : false
 
