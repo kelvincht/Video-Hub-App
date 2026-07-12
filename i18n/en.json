@@ -391,6 +391,8 @@
     "regex": "regex",
     "scanInProgress": "Scanning in progress",
     "similarTo": "and similar to:",
+    "strict": "Strict",
+    "strictMoreInfo": "When checked, matches the whole folder name exactly (e.g. \"kuzu\" won't match \"kuzu_v0-love\"). Unchecked, matches as a substring of the folder name",
     "sortAlphabetical": "Alphabetical",
     "sortAlphabetical2": "Alphabetical 2",
     "sortAspectRatio": "Aspect ratio",

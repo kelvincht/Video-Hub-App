@@ -32,6 +32,13 @@
         <input type="checkbox" [(ngModel)]="filter.recursive">
         {{ 'SIDEBAR.recursive' | translate }}
       </label>
+      <label
+        class="recursive-checkbox-label"
+        title="{{ 'SIDEBAR.strictMoreInfo' | translate }}"
+      >
+        <input type="checkbox" [(ngModel)]="filter.strict">
+        {{ 'SIDEBAR.strict' | translate }}
+      </label>
     }
 
     @if (filter.uniqueKey === 'tagIntersection' && filter.string !== '') {

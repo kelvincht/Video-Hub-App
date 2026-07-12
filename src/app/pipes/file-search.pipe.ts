@@ -23,6 +23,7 @@ export class FileSearchPipe implements PipeTransform {
    * @param autoFileTags    {boolean}
    * @param autoFolderTags  {boolean}
    * @param recursive       {boolean} folder search only: match subfolders too, not just the exact folder
+   * @param strict          {boolean} folder search only: match the whole folder name exactly, rather than as a substring (e.g. "kuzu" won't match "kuzu_v0-love")
    */
   transform(
     finalArray: ImageElement[],
@@ -34,7 +35,8 @@ export class FileSearchPipe implements PipeTransform {
     manualTags?: boolean,
     autoFileTags?: boolean,
     autoFolderTags?: boolean,
-    recursive?: boolean
+    recursive?: boolean,
+    strict?: boolean
   ): ImageElement[] {
 
     if (arrOfStrings.length === 0) {
@@ -56,15 +58,20 @@ export class FileSearchPipe implements PipeTransform {
 
           let searchString = '';
           if (searchType === 'folder') {
-            // exact whole-segment match, not a blind substring check --
-            // "abc" only matches a folder literally named "abc", not "xabcx".
-            // Recursive: "abc" anywhere in the path (an ancestor at any
-            // depth). Non-recursive: "abc" must be the direct parent folder.
+            // By default, each term matches as a SUBSTRING of a folder name
+            // (e.g. "kuzu" matches a folder named "kuzu_v0-love"), evaluated
+            // per whole segment (not the raw joined path, so segment
+            // boundaries are still respected). `strict` requires the term to
+            // equal the whole segment name exactly instead.
+            // Recursive: matches any segment in the path (an ancestor at any
+            // depth). Non-recursive: only the direct parent folder (last
+            // segment) is checked.
             const segments = item.partialPath.split('/').filter(Boolean);
             const term = element.toLowerCase();
+            const segmentMatches = (s: string) => strict ? s.toLowerCase() === term : s.toLowerCase().includes(term);
             const isMatch = recursive
-              ? segments.some((s) => s.toLowerCase() === term)
-              : segments.length > 0 && segments[segments.length - 1].toLowerCase() === term;
+              ? segments.some(segmentMatches)
+              : segments.length > 0 && segmentMatches(segments[segments.length - 1]);
             if (isMatch) {
               matchFound++;
             }
