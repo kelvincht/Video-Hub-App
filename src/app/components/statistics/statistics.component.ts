@@ -36,6 +36,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
 
   readonly deleteInputSourceFiles = output<number>();
   readonly finalArrayNeedsSaving = output<any>();
+  readonly rescanShouldRemoveMissing = output<number>();
   readonly startServerOnPort = output<number>();
 
   readonly appState = input<AppStateInterface>();
@@ -46,6 +47,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
 
   @Input() screenshotSettings: ScreenshotSettings;
 
+  readonly filesRemovedFromIndex = input<Observable<number>>();
   readonly inputFolderChosen = input<Observable<string>>();
   readonly numberScreenshotsDeleted = input<Observable<number>>();
   readonly oldFolderReconnected = input<Observable<{ source: number; path: string; }>>();
@@ -70,6 +72,12 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   // For cleaning old screenshots
   showNumberDeleted = false;
   numberOfScreensDeleted = 0;
+
+  // For rescan-and-remove-missing (session-only, not persisted -- rescans are
+  // infrequent/deliberate so re-checking each time is fine)
+  removeMissingOnRescan = false;
+  showNumberRemoved = false;
+  numberOfFilesRemoved = 0;
 
   removeFoldersMode = false;
 
@@ -126,6 +134,12 @@ export class StatisticsComponent implements OnInit, OnDestroy {
         this.handleScreenshotsDeleted(deleted);
       }
     }));
+
+    this.eventSubscriptionMap.set('filesRemovedFromIndex', this.filesRemovedFromIndex().subscribe((removed: number) => {
+      if (removed !== undefined) { // first emit from subscription is `undefined`
+        this.handleFilesRemoved(removed);
+      }
+    }));
   }
 
   /**
@@ -167,6 +181,27 @@ export class StatisticsComponent implements OnInit, OnDestroy {
       }, 3000);
 
     }, 1000); // make sure it doesn't appear instantly -- feels like an error if it happens to quickly :P
+  }
+
+  /**
+   * Notify user of how many index entries were removed (missing on disk)
+   * @param numRemoved
+   */
+  handleFilesRemoved(numRemoved: number) {
+    if (numRemoved === 0) {
+      return; // nothing removed -- no need to say so
+    }
+    setTimeout(() => {
+
+      this.numberOfFilesRemoved = numRemoved;
+      this.showNumberRemoved = true;
+      this.cd.detectChanges();
+      setTimeout(() => {
+        this.showNumberRemoved = false;
+        this.cd.detectChanges();
+      }, 3000);
+
+    }, 1000);
   }
 
   /**
@@ -243,7 +278,8 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Single scan to add any new videos
+   * Single scan to add any new videos, and -- if `removeMissingOnRescan` is
+   * checked -- also remove index entries whose file is no longer found
    * @param index
    */
   rescanFolder(index: number) {
@@ -251,6 +287,12 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     console.log(typeof(index));
     const inputFolders = this.inputFolders();
     console.log(inputFolders[index].path);
+    if (this.removeMissingOnRescan) {
+      // snapshot the current .vha2 before this rescan can remove anything --
+      // this is a permanent-once-saved action, so back it up every time
+      this.electronService.ipcRenderer.send('backup-vha-before-rescan');
+      this.rescanShouldRemoveMissing.emit(index);
+    }
     this.tellNodeStartWatching(index, inputFolders[index].path, false);
     setTimeout(() => {
       this.cd.detectChanges(); // to update template whether to show "Rescan" or not
