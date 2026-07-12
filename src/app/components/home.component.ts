@@ -1283,7 +1283,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
       const finalArgs = `${this.getVideoPlayerArgs(execPath, time)} ${this.appState.videoPlayerArgs}`;
       const reuseInstance = this.appState.reuseVideoPlayerInstance && this.isSpecialPlayer(execPath);
-      this.electronService.ipcRenderer.send('open-media-file-at-timestamp', execPath, fullPath, finalArgs, reuseInstance);
+      this.electronService.ipcRenderer.send('open-media-file-at-timestamp', execPath, fullPath, finalArgs, reuseInstance, time);
     } else {
       this.electronService.ipcRenderer.send('open-media-file', fullPath);
     }
