@@ -3,6 +3,7 @@ import { Component, NgZone, computed, effect, input, output, viewChild } from '@
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
+import { SegmentClipLoadQueueService } from './../../../services/segment-clip-load-queue.service';
 import { VideoAutoplaySchedulerService } from './../../../services/video-autoplay-scheduler.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
@@ -99,6 +100,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   });
 
   pathToClip = '';
+  posterPath = '';
   noError = true;
 
   // when false, [src] is unbound in the template -- releases the decoder for a
@@ -106,15 +108,24 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   // virtual-scroller actually destroying it) but not actually on screen.
   isRowVisible = true;
 
+  // when false (and `isRowVisible` is true), the row is queued behind the
+  // concurrency budget -- template shows the static poster instead of the
+  // live <video> tiles until this flips true
+  canLoad = false;
+
   private cleanupFns: (() => void)[] = [];
   // cancel functions for scheduled-but-not-yet-started autoplay begins, keyed by
   // the <video> they belong to (hover-triggered playback bypasses the scheduler
   // entirely and is never tracked here)
   private pendingAutoplayStarts = new Map<HTMLVideoElement, () => void>();
+  // release function for this row's current SegmentClipLoadQueueService slot
+  // (held or queued), if any is currently outstanding
+  private releaseLoadSlot: (() => void) | undefined;
 
   constructor(
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
+    private loadQueue: SegmentClipLoadQueueService,
     private ngZone: NgZone,
     private scheduler: VideoAutoplaySchedulerService,
   ) {
@@ -150,6 +161,9 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
     this.pathToClip = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash, true);
+    // already-generated poster for the same clip -- shown while this row is
+    // queued behind the load concurrency budget, at zero extra cost
+    this.posterPath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash);
   }
 
   /**
@@ -205,6 +219,11 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       on('mouseover', (event: Event) => {
         const cell = this.asSegmentVideo(event.target);
         if (!cell) { return; }
+        // same reasoning applies to the load concurrency budget: a queued
+        // row must never make a deliberate hover wait either
+        if (!this.canLoad) {
+          this.forceAdmitLoadSlot();
+        }
         cell.video.muted = this.forceMute() || false; // real hover is a user gesture, so sound is allowed
         this.tryPlay(cell.video);
         if (this.autoplay()) {
@@ -253,8 +272,14 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
           this.eachVideo((v) => v.pause());
           this.pendingAutoplayStarts.forEach((cancel) => cancel());
           this.pendingAutoplayStarts.clear();
+          this.releaseSegmentLoadSlot();
         }
-        this.ngZone.run(() => { this.isRowVisible = isIntersecting; });
+        this.ngZone.run(() => {
+          this.isRowVisible = isIntersecting;
+          if (isIntersecting) {
+            this.requestSegmentLoadSlot();
+          }
+        });
       }, { root: scrollRoot, threshold: 0 });
       intersectionObserver.observe(holder);
       this.cleanupFns.push(() => intersectionObserver.disconnect());
@@ -266,6 +291,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cleanupFns = [];
     this.pendingAutoplayStarts.forEach((cancel) => cancel());
     this.pendingAutoplayStarts.clear();
+    this.releaseSegmentLoadSlot();
     // release decoder resources deterministically
     this.eachVideo((v) => {
       v.pause();
@@ -306,6 +332,45 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     const holder = this.segmentsHolder()?.nativeElement;
     if (!holder) { return; }
     holder.querySelectorAll('video').forEach(fn);
+  }
+
+  /**
+   * Ask `SegmentClipLoadQueueService` for a slot -- admitted immediately if
+   * under budget, otherwise queued (this row stays on the static poster,
+   * `canLoad` false, until admitted).
+   */
+  private requestSegmentLoadSlot(): void {
+    if (this.releaseLoadSlot) {
+      return; // already holding or queued for a slot
+    }
+    this.releaseLoadSlot = this.loadQueue.request(() => {
+      this.ngZone.run(() => { this.canLoad = true; });
+    });
+  }
+
+  /**
+   * Give up this row's slot (held or still queued) -- called when it stops
+   * being visible or is destroyed. `canLoad` is reset so re-entering the
+   * viewport later starts from the poster again until re-admitted.
+   */
+  private releaseSegmentLoadSlot(): void {
+    if (this.releaseLoadSlot) {
+      this.releaseLoadSlot();
+      this.releaseLoadSlot = undefined;
+    }
+    this.canLoad = false;
+  }
+
+  /**
+   * Bypass the queue entirely for a deliberate hover -- replaces any
+   * outstanding normal request with a forced admission.
+   */
+  private forceAdmitLoadSlot(): void {
+    if (this.releaseLoadSlot) {
+      this.releaseLoadSlot();
+    }
+    this.releaseLoadSlot = this.loadQueue.forceAdmit();
+    this.ngZone.run(() => { this.canLoad = true; });
   }
 
   private tryPlay(video: HTMLVideoElement): void {
