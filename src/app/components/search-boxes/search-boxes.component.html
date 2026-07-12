@@ -24,6 +24,16 @@
       type="text"
     >
 
+    @if (filter.uniqueKey.includes('folder')) {
+      <label
+        class="recursive-checkbox-label"
+        title="{{ 'SIDEBAR.recursiveMoreInfo' | translate }}"
+      >
+        <input type="checkbox" [(ngModel)]="filter.recursive">
+        {{ 'SIDEBAR.recursive' | translate }}
+      </label>
+    }
+
     @if (filter.uniqueKey === 'tagIntersection' && filter.string !== '') {
       <span
         class="tag-type-ahead-on-home"

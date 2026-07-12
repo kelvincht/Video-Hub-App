@@ -117,6 +117,7 @@
 @if (sheetOverlayShowing) {
   <app-thumbnail-sheet
     (filterTag)="handleTagWordClicked($event.tag.name, $event.event)"
+    (filterFolder)="handleFolderWordClicked($event.segment, $event.event)"
     (openVideoAtTime)="handleClick($event, sheetItemToDisplay)"
 
     [video]="sheetItemToDisplay"
@@ -822,11 +823,11 @@
 
                 | returnZeroPipe : ((appState.currentView === 'showClips' || appState.currentView === 'showSegments') && currentScreenshotSettings.clipSnippets === 0)
 
-                | fileSearchPipe : filters[0].array : filters[0].bool : true  : 'folder' : false
+                | fileSearchPipe : filters[0].array : filters[0].bool : true  : 'folder' : false : false : false : false : filters[0].recursive
 
-                | fileSearchPipe : filters[1].array : filters[1].bool : false : 'folder' : false
+                | fileSearchPipe : filters[1].array : filters[1].bool : false : 'folder' : false : false : false : false : filters[1].recursive
 
-                | fileSearchPipe : filters[2].array : filters[2].bool : true : 'folder' : true
+                | fileSearchPipe : filters[2].array : filters[2].bool : true : 'folder' : true : false : false : false : filters[2].recursive
 
                 | fileSearchPipe : filters[3].array : filters[3].bool : true  : 'file'   : false
 
@@ -1064,6 +1065,7 @@
           (videoClick)="handleClick($event, item)"
           (rightClick)="rightMouseClicked($event.mouseEvent, $event.item)"
           (filterTag)="handleTagWordClicked($event.tag.name, $event.event)"
+          (filterFolder)="handleFolderWordClicked($event.segment, $event.event)"
           (sheetClick)="this.openThumbnailSheet(item)"
 
           (drop)="droppedSomethingOverVideo($event, item)"
@@ -1383,6 +1385,7 @@
         class="meta-container top-offset"
 
         (filterTag)="handleTagWordClicked($event.tag.name, $event.event)"
+        (filterFolder)="handleFolderWordClicked($event.segment, $event.event)"
 
         [video]="currentClickedItem"
 

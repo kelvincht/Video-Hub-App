@@ -22,6 +22,20 @@
     (keydown.enter)="tryRenamingFile()"
   >
 
+<!-- CLICKABLE FOLDER PATH -->
+@if (pathSegments.length) {
+  <div class="video-path-row" [ngClass]="{ darkModeText: darkMode() }">
+    @for (segment of pathSegments; track $index) {
+      <span
+        class="path-segment"
+        (click)="filterFolder.emit({ segment: segment, event: $event })"
+        title="{{ 'SIDEBAR.recursiveMoreInfo' | translate }}"
+      >{{ segment }}</span>
+      @if (!$last) { <span class="path-separator">/</span> }
+    }
+  </div>
+}
+
 <!-- META DATA SECTION -->
 
 @if (renamingWIP === video.cleanName) {

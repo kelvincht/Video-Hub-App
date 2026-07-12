@@ -13,6 +13,29 @@
   vertical-align: top;
 }
 
+.video-path-row {
+  display: block;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 14px;
+  margin: 2px 0 5px;
+  opacity: 0.8;
+
+  .path-segment {
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .path-separator {
+    color: variables.$gray-50;
+    opacity: 0.5;
+    padding: 0 2px;
+  }
+}
+
 .metadata-text {
   display: block;
   font-family: monospace;
