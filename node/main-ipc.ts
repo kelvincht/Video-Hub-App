@@ -304,6 +304,19 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   });
 
   /**
+   * Save the current index to disk immediately, without closing the window --
+   * used by the "remove missing on rescan" feature so the removal is safely
+   * persisted BEFORE its generated cache files (thumbnails/filmstrips/clips)
+   * are deleted, rather than leaving that removal unsaved indefinitely (the
+   * app otherwise only ever saves on close).
+   */
+  ipc.on('save-vha-file-now', (event, finalObjectToSave: FinalObject) => {
+    writeVhaFileToDisk(finalObjectToSave, GLOBALS.currentlyOpenVhaFile, () => {
+      event.sender.send('vha-file-saved-now');
+    });
+  });
+
+  /**
    * Remove any thumbnails for files no longer present in the hub
    */
   ipc.on('clean-old-thumbnails', (event, finalArray: ImageElement[]) => {
