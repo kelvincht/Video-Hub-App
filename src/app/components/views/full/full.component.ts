@@ -1,5 +1,5 @@
 import type { OnInit} from '@angular/core';
-import { Component, Input, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input, output } from '@angular/core';
 
 import { FilePathService } from '../file-path.service';
 
@@ -18,7 +18,8 @@ import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/s
       '../film-and-full.scss',
       '../selected.scss'
     ],
-  animations: [ textAppear, metaAppear ]
+  animations: [ textAppear, metaAppear ],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FullViewComponent implements OnInit {
 

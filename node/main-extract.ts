@@ -31,6 +31,14 @@ import { GLOBALS } from './main-globals';
 
 import type { ImageElement, ScreenshotSettings } from '../interfaces/final-object.interface';
 
+// Hardware-accelerated decode, applied before each `-i` input.
+// ffmpeg falls back to software filtering automatically for filter_complex
+// (hstack/concat/scale) chains, so this only speeds up the decode step.
+const HWACCEL_ARGS: string[] =
+  process.platform === 'darwin' ? ['-hwaccel', 'videotoolbox'] :
+  process.platform === 'win32'  ? ['-hwaccel', 'auto'] :
+  ['-hwaccel', 'auto'];
+
 
 // ========================================================================================
 //          FFMPEG arg generating functions
@@ -54,6 +62,7 @@ const extractSingleFrameArgs = (
 
   const args: string[] = [
     '-ss', (duration / 10).toString(),
+    ...HWACCEL_ARGS,
     '-i', pathToVideo,
     '-frames', '1',
     '-q:v', '2',
@@ -99,7 +108,7 @@ const generateScreenshotStripArgs = (
   // make the magic filter
   while (current < totalCount) {
     const time = (current + 1) * step; // +1 so we don't pick the 0th frame
-    args.push('-ss', time.toString(), '-i', pathToVideo);
+    args.push('-ss', time.toString(), ...HWACCEL_ARGS, '-i', pathToVideo);
     allFramesFiltered += '[' + current + ':V]' + fancyScaleFilter + '[' + current + '];';
     outputFrames += '[' + current + ']';
     current++;
@@ -143,7 +152,7 @@ const generatePreviewClipArgs = (
   while (current <= totalCount) {
     const time = current * step;
     const preview_duration = snippetLength;
-    args.push('-ss', time.toString(), '-t', preview_duration.toString(), '-i', pathToVideo);
+    args.push('-ss', time.toString(), '-t', preview_duration.toString(), ...HWACCEL_ARGS, '-i', pathToVideo);
     concat += '[' + (current - 1) + ':V]' + '[' + (current - 1) + ':a]';
     current++;
   }

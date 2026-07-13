@@ -1,4 +1,4 @@
-import { Component, Input, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input } from '@angular/core';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import { ImageElementService } from './../../../services/image-element.service';
@@ -12,7 +12,8 @@ import { ImageElementService } from './../../../services/image-element.service';
       './file.component.scss',
       '../../../fonts/icons.scss',
       '../selected.scss'
-    ]
+    ],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FileComponent {
 

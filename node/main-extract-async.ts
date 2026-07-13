@@ -7,7 +7,11 @@ const chokidar = require('chokidar');
 import * as path from 'path';
 import type { FSWatcher } from 'chokidar'; // probably the correct type for chokidar.watch() object
 const fs = require('fs');
+const os = require('os');
 import { fdir } from 'fdir';
+
+// Concurrency for the meta/thumb queues below. Leave 1 core free for the UI/main process.
+const QUEUE_CONCURRENCY = Math.max(1, os.cpus().length - 1);
 
 import { GLOBALS } from './main-globals';
 
@@ -88,8 +92,7 @@ export function resetAllQueues(): void {
   metaDone = 0;
   metaExtractionStartTime = 0;
 
-  metadataQueue = async.queue(metadataQueueRunner, 1); // 1 is the number of parallel worker functions
-                                                       // ^--- experiment with numbers to see what is fastest (try 8)
+  metadataQueue = async.queue(metadataQueueRunner, QUEUE_CONCURRENCY); // number of parallel worker functions
 
   metadataQueue.drain(() => {
 
@@ -102,7 +105,7 @@ export function resetAllQueues(): void {
   thumbsDone = 0;
   thumbExtractionStartTime = 0;
 
-  thumbQueue = async.queue(thumbQueueRunner, 1); // 1 is the number of threads
+  thumbQueue = async.queue(thumbQueueRunner, QUEUE_CONCURRENCY); // number of threads
 
   thumbQueue.drain(() => {
 

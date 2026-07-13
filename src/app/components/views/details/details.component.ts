@@ -1,4 +1,4 @@
-import { Component, input, output, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, viewChild } from '@angular/core';
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
@@ -22,7 +22,8 @@ export interface YearEmission {
       '../time-and-rez.scss',
       './details.component.scss',
       '../selected.scss'
-    ]
+    ],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class DetailsComponent {
 

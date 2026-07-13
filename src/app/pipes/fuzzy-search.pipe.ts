@@ -18,6 +18,12 @@ export class FuzzySearchPipe implements PipeTransform {
     keys: ['cleanName'],
   };
 
+  // Cache the Fuse index -- rebuilding it is the expensive part, and the
+  // source array only changes when the library is rescanned/filtered upstream,
+  // not on every keystroke of the search box.
+  private cachedArray: ImageElement[] | undefined;
+  private cachedFuse: Fuse<ImageElement> | undefined;
+
   /**
    * Return only items that ~fuzzy~ match search string
    * @param finalArray
@@ -28,9 +34,12 @@ export class FuzzySearchPipe implements PipeTransform {
     if (searchString === '' || searchString.length < 3) {
       return finalArray;
     } else {
-      const fuse = new Fuse(finalArray, this.options);
+      if (finalArray !== this.cachedArray) {
+        this.cachedArray = finalArray;
+        this.cachedFuse = new Fuse(finalArray, this.options);
+      }
 
-      return fuse.search(searchString).map((element) => element.item);
+      return this.cachedFuse.search(searchString).map((element) => element.item);
     }
   }
 

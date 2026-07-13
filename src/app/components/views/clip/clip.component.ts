@@ -1,6 +1,6 @@
 import { ChangeDetectorRef, input, output } from '@angular/core';
 import type { OnInit } from '@angular/core';
-import { Component, HostListener, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
 import { FilePathService } from '../file-path.service';
@@ -21,7 +21,8 @@ import { metaAppear, textAppear } from '../../../common/animations';
       './clip.component.scss',
       '../selected.scss'
     ],
-  animations: [ textAppear, metaAppear ]
+  animations: [ textAppear, metaAppear ],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ClipComponent implements OnInit {
 

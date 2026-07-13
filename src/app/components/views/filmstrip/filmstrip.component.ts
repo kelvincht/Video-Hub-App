@@ -1,5 +1,5 @@
 import type { OnInit, ElementRef} from '@angular/core';
-import { Component, input, output, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, viewChild } from '@angular/core';
 
 import { FilePathService } from '../file-path.service';
 
@@ -19,7 +19,8 @@ import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/s
       '../selected.scss',
       './filmstrip.component.scss'
     ],
-  animations: [ textAppear, metaAppear ]
+  animations: [ textAppear, metaAppear ],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FilmstripComponent implements OnInit {
 

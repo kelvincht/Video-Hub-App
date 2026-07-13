@@ -15,6 +15,20 @@ export class ImageElementService {
   constructor() { }
 
   /**
+   * Replace `imageElements[index]` with a new object (shallow clone + patch)
+   * rather than mutating the existing object in place.
+   *
+   * This matters for `OnPush` leaf components (thumbnail/file/full/etc.):
+   * they read `video` via `@Input`, and `OnPush` only re-renders when that
+   * reference changes. In-place mutation left the reference identical, so
+   * changes triggered from elsewhere (Details panel, bulk actions, keyboard
+   * shortcuts) would not repaint the grid row for that item.
+   */
+  private patchElement(index: number, patch: Partial<ImageElement>): void {
+    this.imageElements[index] = { ...this.imageElements[index], ...patch };
+  }
+
+  /**
    * Update imageElements with emission of element
    * @param emission
    */
@@ -23,16 +37,16 @@ export class ImageElementService {
 
     if (       'year' in emission) {
 
-      this.imageElements[index].year =          (emission as YearEmission).year;
+      this.patchElement(index, { year: (emission as YearEmission).year });
 
     } else if ('stars' in emission) {
 
-      this.imageElements[index].stars =         (emission as StarEmission).stars;
+      this.patchElement(index, { stars: (emission as StarEmission).stars });
       this.forceStarFilterUpdate = !this.forceStarFilterUpdate;
 
     } else if ('defaultScreen' in emission) {
 
-      this.imageElements[index].defaultScreen = (emission as DefaultScreenEmission).defaultScreen;
+      this.patchElement(index, { defaultScreen: (emission as DefaultScreenEmission).defaultScreen });
 
     } else if ('tag' in emission) {
 
@@ -52,8 +66,10 @@ export class ImageElementService {
   replaceFileNameInFinalArray(renameTo: string, oldFileName: string, index: number): void {
 
     if (this.imageElements[index].fileName === oldFileName) {
-      this.imageElements[index].fileName = renameTo;
-      this.imageElements[index].cleanName = renameTo.slice().substr(0, renameTo.lastIndexOf('.'));
+      this.patchElement(index, {
+        fileName: renameTo,
+        cleanName: renameTo.slice().substr(0, renameTo.lastIndexOf('.')),
+      });
     }
 
     this.finalArrayNeedsSaving = true;
@@ -65,11 +81,12 @@ export class ImageElementService {
    */
   updateNumberOfTimesPlayed(index: number): void {
 
-    this.imageElements[index].lastPlayed = Date.now(); // update `lastPlayed`
-
-    this.imageElements[index].timesPlayed
-      ? this.imageElements[index].timesPlayed++
-      : this.imageElements[index].timesPlayed = 1;     // update `timesPlayed`
+    this.patchElement(index, {
+      lastPlayed: Date.now(), // update `lastPlayed`
+      timesPlayed: this.imageElements[index].timesPlayed
+        ? this.imageElements[index].timesPlayed + 1
+        : 1,                  // update `timesPlayed`
+    });
 
     this.finalArrayNeedsSaving = true;
   }
@@ -96,9 +113,12 @@ export class ImageElementService {
    */
   updatePlaylist(index: number): void {
 
-    this.imageElements[index].playlist
-      ? delete this.imageElements[index].playlist
-      : this.imageElements[index].playlist = Date.now();
+    if (this.imageElements[index].playlist) {
+      const { playlist, ...rest } = this.imageElements[index];
+      this.imageElements[index] = rest as ImageElement;
+    } else {
+      this.patchElement(index, { playlist: Date.now() });
+    }
 
     this.finalArrayNeedsSaving = true;
   }
@@ -107,8 +127,12 @@ export class ImageElementService {
    * Clear out the playlist
    */
   emptyPlaylist(): void {
-    this.imageElements.forEach((element) => {
-      delete element.playlist;
+    this.imageElements = this.imageElements.map((element) => {
+      if (!element.playlist) {
+        return element;
+      }
+      const { playlist, ...rest } = element;
+      return rest as ImageElement;
     });
 
     this.finalArrayNeedsSaving = true;
@@ -117,14 +141,13 @@ export class ImageElementService {
   private handleTagEmission(emission: TagEmission): void {
     const position: number = emission.index;
     if (emission.type === 'add') {
-      if (this.imageElements[position].tags) {
-        this.imageElements[position].tags.push(emission.tag);
-      } else {
-        this.imageElements[position].tags = [emission.tag];
-      }
+      const tags: string[] = this.imageElements[position].tags
+        ? [...this.imageElements[position].tags, emission.tag]
+        : [emission.tag];
+      this.patchElement(position, { tags });
     } else {
-      this.imageElements[position].tags.
-        splice(this.imageElements[position].tags.indexOf(emission.tag), 1);
+      const tags: string[] = this.imageElements[position].tags.filter((tag) => tag !== emission.tag);
+      this.patchElement(position, { tags });
     }
   }
 
