@@ -1,5 +1,5 @@
-import type { OnInit, ElementRef, OnDestroy } from '@angular/core';
-import { Component, Input, input, output, viewChild } from '@angular/core';
+import type { OnInit, OnDestroy } from '@angular/core';
+import { Component, ElementRef, Input, input, output, viewChild } from '@angular/core';
 
 import { FilePathService } from '../file-path.service';
 
@@ -8,6 +8,7 @@ import { metaAppear, textAppear } from '../../../common/animations';
 import { ImageElementService } from './../../../services/image-element.service';
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import type { VideoClickEmit, RightClickEmit } from '../../../../../interfaces/shared-interfaces';
+import { createVisibilityGate } from '../../../common/visibility-gate';
 
 @Component({
   standalone: false,
@@ -64,7 +65,17 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
   percentOffset = 0;
   scrollInterval: any = null;
 
+  // when false, [src]/background-image bindings are unbound in the template --
+  // releases the image for a row that's still mounted (e.g. just outside the
+  // visible viewport, ahead of virtual-scroller actually destroying it) but
+  // not actually on screen. Restores immediately (no idle delay) once visible
+  // again, since a fast, always-current thumbnail is the entire point of this view.
+  rowVisible = true;
+
+  private disconnectVisibilityGate: () => void;
+
   constructor(
+    private elementRef: ElementRef<HTMLElement>,
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
   ) { }
@@ -86,6 +97,12 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
       this.hover = true;
       this.percentOffset = this.defaultScreenOffset(this.video);
     }
+
+    this.disconnectVisibilityGate = createVisibilityGate(
+      this.elementRef.nativeElement,
+      () => { this.rowVisible = true; },
+      () => { this.rowVisible = false; },
+    );
   }
 
   defaultScreenOffset(video: ImageElement): number {
@@ -133,6 +150,7 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     clearInterval(this.scrollInterval);
+    this.disconnectVisibilityGate?.();
   }
 
   openDetailsView(leftClick: PointerEvent): void {

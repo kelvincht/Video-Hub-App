@@ -1,5 +1,5 @@
-import { ChangeDetectorRef, input, output } from '@angular/core';
-import type { OnInit } from '@angular/core';
+import { ChangeDetectorRef, ElementRef, input, output } from '@angular/core';
+import type { OnDestroy, OnInit } from '@angular/core';
 import { Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -10,6 +10,7 @@ import type { ImageElement } from '../../../../../interfaces/final-object.interf
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
 
 import { metaAppear, textAppear } from '../../../common/animations';
+import { createVisibilityGate } from '../../../common/visibility-gate';
 
 @Component({
   standalone: false,
@@ -23,7 +24,7 @@ import { metaAppear, textAppear } from '../../../common/animations';
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class ClipComponent implements OnInit {
+export class ClipComponent implements OnInit, OnDestroy {
 
   readonly rightClick = output<RightClickEmit>();
   readonly sheetClick = output<any>(); // does not emit data of any kind
@@ -54,8 +55,16 @@ export class ClipComponent implements OnInit {
   poster: string;
   posterFolderType: any = 'clips';
 
+  // when false, [src] is unbound in the template -- releases the decoder for a
+  // row that's still mounted (e.g. just outside the visible viewport, ahead of
+  // virtual-scroller actually destroying it) but not actually on screen.
+  rowVisible = true;
+
+  private disconnectVisibilityGate: () => void;
+
   constructor(
     public cd: ChangeDetectorRef,
+    private elementRef: ElementRef<HTMLElement>,
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
     public sanitizer: DomSanitizer
@@ -110,6 +119,19 @@ export class ClipComponent implements OnInit {
       this.folderThumbPaths.push(this.pathToVideo);
       this.folderPosterPaths.push(this.poster);
     }
+
+    this.disconnectVisibilityGate = createVisibilityGate(
+      this.elementRef.nativeElement,
+      () => { this.rowVisible = true; },
+      () => {
+        this.rowVisible = false;
+        this.elementRef.nativeElement.querySelectorAll('video').forEach((v: HTMLVideoElement) => v.pause());
+      },
+    );
+  }
+
+  ngOnDestroy(): void {
+    this.disconnectVisibilityGate?.();
   }
 
   toggleHeart(mouseClick: PointerEvent): void {

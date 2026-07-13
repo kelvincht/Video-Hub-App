@@ -8,6 +8,7 @@ import type { ImageElement } from '../../../../../interfaces/final-object.interf
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
 
 import { metaAppear, textAppear } from '../../../common/animations';
+import { createVisibilityGate } from '../../../common/visibility-gate';
 
 // margin to stop just short of a snippet's end so a `timeupdate` (fires ~4x/s)
 // never bleeds into the next snippet of the concatenated clip
@@ -100,7 +101,13 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   pathToClip = '';
   noError = true;
 
+  // when false, [src] is unbound in the template -- releases the decoder for a
+  // row that's still mounted (e.g. just outside the visible viewport, ahead of
+  // virtual-scroller actually destroying it) but not actually on screen.
+  rowVisible = true;
+
   private cleanupFns: (() => void)[] = [];
+  private disconnectVisibilityGate: () => void;
 
   constructor(
     public filePathService: FilePathService,
@@ -222,12 +229,22 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
         window.removeEventListener('blur', onBlur);
         window.removeEventListener('focus', onFocus);
       });
+
+      this.disconnectVisibilityGate = createVisibilityGate(
+        holder,
+        () => this.ngZone.run(() => { this.rowVisible = true; }),
+        () => this.ngZone.run(() => {
+          this.rowVisible = false;
+          this.eachVideo((v) => v.pause());
+        }),
+      );
     });
   }
 
   ngOnDestroy(): void {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
+    this.disconnectVisibilityGate?.();
     // release decoder resources deterministically
     this.eachVideo((v) => {
       v.pause();
