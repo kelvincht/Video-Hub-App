@@ -3,6 +3,7 @@ import { Component, NgZone, computed, effect, input, output, viewChild } from '@
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
+import { ClipLoadQueueService } from './../../../services/clip-load-queue.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
@@ -101,11 +102,19 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   pathToClip = '';
   noError = true;
 
+  // when false, [src] is unbound (poster background-image shown instead) --
+  // this row is queued behind the concurrency budget rather than actively
+  // loading/decoding its clip file.
+  canLoad = false;
+  posterPath = '';
+
   private cleanupFns: (() => void)[] = [];
+  private releaseLoadSlot: (() => void) | undefined;
 
   constructor(
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
+    private loadQueue: ClipLoadQueueService,
     private ngZone: NgZone,
   ) {
     // Mirrors clip.component's `@if(!autoplay()) / @if(autoplay())` template swap, which
@@ -139,6 +148,13 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
     this.pathToClip = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash, true);
+    // already-generated poster for the same clip -- shown while this row is
+    // queued behind the load concurrency budget, at zero extra cost
+    this.posterPath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash);
+
+    this.releaseLoadSlot = this.loadQueue.request(() => {
+      this.ngZone.run(() => { this.canLoad = true; });
+    });
   }
 
   /**
@@ -188,10 +204,15 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       on('timeupdate', loopBack, true);
       on('ended', loopBack, true);
 
-      // hover-to-play (default mode); in autoplay mode hovering only unmutes
+      // hover-to-play (default mode); in autoplay mode hovering only unmutes.
+      // A queued row (canLoad false) must never make a deliberate hover wait
+      // on the load-concurrency budget either -- force-admit it immediately.
       on('mouseover', (event: Event) => {
         const cell = this.asSegmentVideo(event.target);
         if (!cell) { return; }
+        if (!this.canLoad) {
+          this.forceAdmitLoadSlot();
+        }
         if (this.autoplay()) {
           cell.video.muted = this.forceMute() || false; // already playing; just unmute (real hover = user gesture)
         } else {
@@ -229,8 +250,19 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
+    this.releaseLoadSlot?.();
     const holder = this.segmentsHolder()?.nativeElement;
     if (holder) { releaseVideoDecoders(holder); }
+  }
+
+  /**
+   * Bypass the load-concurrency queue entirely for a deliberate hover --
+   * replaces any outstanding normal request with a forced admission.
+   */
+  private forceAdmitLoadSlot(): void {
+    this.releaseLoadSlot?.();
+    this.releaseLoadSlot = this.loadQueue.forceAdmit();
+    this.ngZone.run(() => { this.canLoad = true; });
   }
 
   /**

@@ -8,7 +8,12 @@
   <div
     #segmentsHolder
     class="segments-row"
-    [ngStyle]="{ height: cellHeight() + 'px' }"
+    [ngStyle]="{
+        height: cellHeight() + 'px',
+        'background-image': (!canLoad && posterPath) ? 'url(' + posterPath + ')' : 'none',
+        'background-repeat': 'repeat-x',
+        'background-size': cellWidth() + 'px ' + cellHeight() + 'px'
+      }"
     (click)="cellClick($event)"
     (dblclick)="cellClick($event, true)"
     (contextmenu)="cellRightClick($event)"
@@ -27,7 +32,7 @@
       @for (i of segmentIndexes(); track i) {
         <video
           class="segment-cell"
-          [src]="pathToClip"
+          [src]="canLoad ? pathToClip : null"
           [attr.data-seg]="i"
           muted
           [ngStyle]="{

@@ -5,6 +5,7 @@ import { DomSanitizer } from '@angular/platform-browser';
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
+import { ClipLoadQueueService } from './../../../services/clip-load-queue.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
@@ -55,16 +56,30 @@ export class ClipComponent implements OnInit, OnDestroy {
   poster: string;
   posterFolderType: any = 'clips';
 
+  // when false, [src] is unbound in the template (the existing [poster] frame
+  // shows instead, at zero extra cost) -- this component is queued behind the
+  // load-concurrency budget rather than actively loading/decoding its clip(s).
+  canLoad = false;
+
+  private releaseLoadSlot: (() => void) | undefined;
+
   constructor(
     public cd: ChangeDetectorRef,
     private elementRef: ElementRef<HTMLElement>,
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
+    private loadQueue: ClipLoadQueueService,
     public sanitizer: DomSanitizer
   ) { }
 
   @HostListener('mouseenter') onMouseEnter() {
     this.hover = true;
+    // a deliberate hover must never wait on the load-concurrency budget
+    if (!this.canLoad) {
+      this.releaseLoadSlot?.();
+      this.releaseLoadSlot = this.loadQueue.forceAdmit();
+      this.canLoad = true;
+    }
   }
   @HostListener('mouseleave') onMouseLeave() {
     this.hover = false;
@@ -112,9 +127,12 @@ export class ClipComponent implements OnInit, OnDestroy {
       this.folderThumbPaths.push(this.pathToVideo);
       this.folderPosterPaths.push(this.poster);
     }
+
+    this.releaseLoadSlot = this.loadQueue.request(() => { this.canLoad = true; });
   }
 
   ngOnDestroy(): void {
+    this.releaseLoadSlot?.();
     releaseVideoDecoders(this.elementRef.nativeElement);
   }
 
