@@ -25,21 +25,28 @@
 
     @if (noError) {
       @for (i of segmentIndexes(); track i) {
-        <video
-          class="segment-cell"
-          [src]="pathToClip"
-          [poster]="sanitizer.bypassSecurityTrustUrl(posterPath)"
+        <div
+          class="segment-cell-wrap"
           [attr.data-seg]="i"
-          muted
           [ngStyle]="{
               width: cellWidth() + 'px',
-              height: cellHeight() + 'px'
+              height: cellHeight() + 'px',
+              'background-image': 'url(' + filmstripPath + ')',
+              'background-position-x': filmstripOffsetPx(i) + 'px',
+              'background-size': 'auto ' + cellHeight() + 'px'
             }"
-          preload="metadata"
-          fetchpriority="high"
-          playsinline
-          disablepictureinpicture
-        ></video>
+        >
+          <video
+            class="segment-cell"
+            [src]="pathToClip"
+            [attr.data-seg]="i"
+            muted
+            preload="metadata"
+            fetchpriority="low"
+            playsinline
+            disablepictureinpicture
+          ></video>
+        </div>
       }
     }
 
