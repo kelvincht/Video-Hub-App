@@ -29,11 +29,32 @@ export class ClipLoadQueueService {
   // ever be displayed -- since slots free up as soon as each load finishes
   // (not when a component leaves the screen), this only affects how many
   // loads race each other at once, not whether something eventually loads.
-  // A modest number is enough for that; raise if profiling says otherwise.
-  private readonly maxConcurrent = 10;
+  private readonly steadyStateMax = 10;
+  // A big, sudden burst (fresh search/hub load rendering dozens of rows at
+  // once) drains much faster with a temporarily wider gate -- reverts to
+  // steadyStateMax automatically once the backlog clears, so this doesn't
+  // loosen the steady-state (scrolling) protection at all.
+  private readonly burstMax = 30;
+  private readonly burstThreshold = 15; // queue depth that switches into burst mode
+
+  // Caps how many components may hold an already-*loaded* clip resident at
+  // once, independent of the above -- once a load finishes, its component
+  // moves from "loading" (bounded above) to "resident" (bounded here). This
+  // is what lets a large `[bufferAmount]` stay mounted for a long time
+  // without unbounded memory growth: the oldest resident gets evicted (video
+  // paused/unbound, but its component is NOT destroyed) to make room, and
+  // will simply re-request a load if it's still relevant later. ~80 is a
+  // rough stand-in for "a few hundred MB of resident clip data", not a
+  // precise measurement (the browser doesn't expose real decoder memory use).
+  private readonly residentCap = 80;
 
   private activeCount = 0;
   private queue: Array<() => void> = [];
+  private residentOrder: Array<{ evict: () => void }> = [];
+
+  private get effectiveMax(): number {
+    return this.queue.length > this.burstThreshold ? this.burstMax : this.steadyStateMax;
+  }
 
   /**
    * @param onAdmitted called once a slot is available (immediately, if one
@@ -51,7 +72,7 @@ export class ClipLoadQueueService {
       onAdmitted();
     };
 
-    if (this.activeCount < this.maxConcurrent) {
+    if (this.activeCount < this.effectiveMax) {
       admit();
     } else {
       queuedEntry = admit;
@@ -72,6 +93,34 @@ export class ClipLoadQueueService {
           this.queue.splice(index, 1);
         }
         queuedEntry = undefined;
+      }
+    };
+  }
+
+  /**
+   * Register a component as holding a fully-loaded (not just admitted-to-load)
+   * clip, once it's done loading -- separate from and after `request()`'s
+   * slot. If the resident count exceeds `residentCap`, the oldest registered
+   * entry is evicted (its `evict` callback fires) to make room; the evicted
+   * component is expected to release its own decoder and re-`request()` if
+   * it's still relevant, not be destroyed.
+   * @returns an unregister function -- call it if the component goes away
+   *          (destroyed, or evicted through some other path) so a stale
+   *          entry doesn't linger
+   */
+  markResident(evict: () => void): () => void {
+    const entry = { evict };
+    this.residentOrder.push(entry);
+    while (this.residentOrder.length > this.residentCap) {
+      const oldest = this.residentOrder.shift();
+      if (oldest && oldest !== entry) {
+        oldest.evict();
+      }
+    }
+    return () => {
+      const index = this.residentOrder.indexOf(entry);
+      if (index !== -1) {
+        this.residentOrder.splice(index, 1);
       }
     };
   }

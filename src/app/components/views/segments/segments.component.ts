@@ -1,5 +1,6 @@
 import type { AfterViewInit, ElementRef, OnDestroy, OnInit } from '@angular/core';
 import { Component, NgZone, computed, effect, input, output, viewChild } from '@angular/core';
+import { DomSanitizer } from '@angular/platform-browser';
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
@@ -110,12 +111,14 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private cleanupFns: (() => void)[] = [];
   private releaseLoadSlot: (() => void) | undefined;
+  private unregisterResident: (() => void) | undefined;
 
   constructor(
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
     private loadQueue: ClipLoadQueueService,
     private ngZone: NgZone,
+    public sanitizer: DomSanitizer,
   ) {
     // Mirrors clip.component's `@if(!autoplay()) / @if(autoplay())` template swap, which
     // naturally re-applies the current mode whenever the button is toggled. This component
@@ -251,6 +254,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
     this.releaseLoadSlot?.();
+    this.unregisterResident?.();
     const holder = this.segmentsHolder()?.nativeElement;
     if (holder) { releaseVideoDecoders(holder); }
   }
@@ -263,6 +267,22 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.releaseLoadSlot?.();
     this.releaseLoadSlot = this.loadQueue.forceAdmit();
     this.ngZone.run(() => { this.canLoad = true; });
+  }
+
+  /**
+   * Called when this row is the oldest resident and the load-queue needs its
+   * slot back. Releases the decoder but does NOT destroy the component --
+   * just re-requests a load, same as the initial ngOnInit request, so it
+   * picks back up quickly if it's still relevant.
+   */
+  private evictLoaded(): void {
+    this.ngZone.run(() => { this.canLoad = false; });
+    const holder = this.segmentsHolder()?.nativeElement;
+    if (holder) { releaseVideoDecoders(holder); }
+    this.unregisterResident = undefined;
+    this.releaseLoadSlot = this.loadQueue.request(() => {
+      this.ngZone.run(() => { this.canLoad = true; });
+    });
   }
 
   /**
@@ -291,6 +311,9 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     // subsequent tiles/calls since releaseLoadSlot is cleared after firing.
     this.releaseLoadSlot?.();
     this.releaseLoadSlot = undefined;
+    if (!this.unregisterResident) {
+      this.unregisterResident = this.loadQueue.markResident(() => this.evictLoaded());
+    }
 
     cell.video.muted = true; // set imperatively: [muted] binding is unreliable and blocks programmatic play()
     if (Math.abs(cell.video.currentTime - cell.start) > 0.01) {

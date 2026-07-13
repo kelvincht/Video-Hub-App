@@ -62,6 +62,8 @@ export class ClipComponent implements OnInit, AfterViewInit, OnDestroy {
   canLoad = false;
 
   private releaseLoadSlot: (() => void) | undefined;
+  private unregisterResident: (() => void) | undefined;
+  private residentRegistered = false;
   private cleanupFns: (() => void)[] = [];
 
   constructor(
@@ -153,6 +155,12 @@ export class ClipComponent implements OnInit, AfterViewInit, OnDestroy {
           this.releaseLoadSlot?.();
           this.releaseLoadSlot = undefined;
         });
+        // register as resident (fully loaded) only once -- folder view has up
+        // to 4 videos, each firing this independently
+        if (!this.residentRegistered) {
+          this.residentRegistered = true;
+          this.unregisterResident = this.loadQueue.markResident(() => this.evictLoaded());
+        }
       };
       // media events do not bubble -> listen in capture phase on the host
       this.elementRef.nativeElement.addEventListener('loadeddata', onLoadedData, true);
@@ -160,10 +168,24 @@ export class ClipComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  /**
+   * Called when this component is the oldest resident and the load-queue
+   * needs its slot back. Releases the decoder but does NOT destroy the
+   * component -- just re-requests a load, same as the initial ngOnInit
+   * request, so it picks back up quickly if it's still relevant.
+   */
+  private evictLoaded(): void {
+    this.ngZone.run(() => { this.canLoad = false; });
+    releaseVideoDecoders(this.elementRef.nativeElement);
+    this.residentRegistered = false;
+    this.releaseLoadSlot = this.loadQueue.request(() => this.ngZone.run(() => { this.canLoad = true; }));
+  }
+
   ngOnDestroy(): void {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
     this.releaseLoadSlot?.(); // no-op if already released via loadeddata
+    this.unregisterResident?.();
     releaseVideoDecoders(this.elementRef.nativeElement);
   }
 
