@@ -6,20 +6,31 @@ import { Injectable } from '@angular/core';
  * all its tiles, so admission is per-row there, not per-tile). Unlike
  * `VideoAutoplaySchedulerService` (which only staggers *when* an already-
  * admitted video starts playing and never denies anything), this caps how
- * many components may have `[src]` bound -- i.e. actually loading/decoding --
- * at once, persistently, not just during initial load.
+ * many components may be actively *loading* -- i.e. have `[src]` bound and
+ * are fetching/decoding -- at once.
  *
- * A component holds its slot for as long as it's mounted; released on
- * `ngOnDestroy`. Combined with the gallery's virtual-scroller running with
- * `[bufferAmount]="0"`, that keeps the "currently loading" set close to "what's
- * actually on screen" without needing any separate visibility tracking here.
+ * This is a worker-pool, not a visibility cap: a slot is released as soon as
+ * the caller's load finishes (its video fires `loadeddata`/`loadedmetadata`),
+ * not when the component is destroyed. That's the important part -- tying
+ * release to "mounted" rather than "done loading" was tried first and starves
+ * anything past the first `maxConcurrent` components whenever enough of them
+ * stay visible/mounted at once (which is the common case, not an edge case).
+ * With release-on-load-complete, every component gets its turn quickly
+ * regardless of how many are on screen, since each slot only holds for the
+ * duration of one load, not indefinitely. `ngOnDestroy` still calls release
+ * too, as a fallback for a component that's abandoned (scrolled away) before
+ * it ever finished loading -- calling an already-released release fn is a
+ * safe no-op (see below).
  */
 @Injectable({ providedIn: 'root' })
 export class ClipLoadQueueService {
 
-  // ~6 keeps total concurrent decode/network load in a reasonable range
-  // regardless of view; tune if needed.
-  private readonly maxConcurrent = 6;
+  // Bounds simultaneous in-flight network/decode operations, not how much can
+  // ever be displayed -- since slots free up as soon as each load finishes
+  // (not when a component leaves the screen), this only affects how many
+  // loads race each other at once, not whether something eventually loads.
+  // A modest number is enough for that; raise if profiling says otherwise.
+  private readonly maxConcurrent = 10;
 
   private activeCount = 0;
   private queue: Array<() => void> = [];

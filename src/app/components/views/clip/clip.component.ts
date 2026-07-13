@@ -1,5 +1,5 @@
-import { ChangeDetectorRef, ElementRef, input, output } from '@angular/core';
-import type { OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, ElementRef, NgZone, input, output } from '@angular/core';
+import type { AfterViewInit, OnDestroy, OnInit } from '@angular/core';
 import { Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -25,7 +25,7 @@ import { releaseVideoDecoders } from '../../../common/release-video-decoders';
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class ClipComponent implements OnInit, OnDestroy {
+export class ClipComponent implements OnInit, AfterViewInit, OnDestroy {
 
   readonly rightClick = output<RightClickEmit>();
   readonly sheetClick = output<any>(); // does not emit data of any kind
@@ -62,6 +62,7 @@ export class ClipComponent implements OnInit, OnDestroy {
   canLoad = false;
 
   private releaseLoadSlot: (() => void) | undefined;
+  private cleanupFns: (() => void)[] = [];
 
   constructor(
     public cd: ChangeDetectorRef,
@@ -69,6 +70,7 @@ export class ClipComponent implements OnInit, OnDestroy {
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
     private loadQueue: ClipLoadQueueService,
+    private ngZone: NgZone,
     public sanitizer: DomSanitizer
   ) { }
 
@@ -128,11 +130,40 @@ export class ClipComponent implements OnInit, OnDestroy {
       this.folderPosterPaths.push(this.poster);
     }
 
-    this.releaseLoadSlot = this.loadQueue.request(() => { this.canLoad = true; });
+    // wrapped in ngZone.run: a later (queued, not immediate) admission can be
+    // triggered by another component's release happening outside Angular's
+    // zone (see ngAfterViewInit below), so this must re-enter the zone itself
+    // to make sure the resulting [src] binding update is picked up by CD
+    this.releaseLoadSlot = this.loadQueue.request(() => this.ngZone.run(() => { this.canLoad = true; }));
+  }
+
+  /**
+   * Release the load-queue slot as soon as this component's video has
+   * actually finished loading (not when it's destroyed) -- a worker-pool
+   * "job done" signal, not a visibility signal. Delegated + outside Angular's
+   * zone since `loadeddata` is a media event that doesn't need to trigger
+   * change detection itself; only the (rare, one-time) resulting slot
+   * hand-off to a queued component needs to run inside the zone, which the
+   * release call below re-enters explicitly.
+   */
+  ngAfterViewInit(): void {
+    this.ngZone.runOutsideAngular(() => {
+      const onLoadedData = () => {
+        this.ngZone.run(() => {
+          this.releaseLoadSlot?.();
+          this.releaseLoadSlot = undefined;
+        });
+      };
+      // media events do not bubble -> listen in capture phase on the host
+      this.elementRef.nativeElement.addEventListener('loadeddata', onLoadedData, true);
+      this.cleanupFns.push(() => this.elementRef.nativeElement.removeEventListener('loadeddata', onLoadedData, true));
+    });
   }
 
   ngOnDestroy(): void {
-    this.releaseLoadSlot?.();
+    this.cleanupFns.forEach((fn) => fn());
+    this.cleanupFns = [];
+    this.releaseLoadSlot?.(); // no-op if already released via loadeddata
     releaseVideoDecoders(this.elementRef.nativeElement);
   }
 

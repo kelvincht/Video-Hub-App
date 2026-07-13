@@ -284,6 +284,14 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
    * Idempotent — safe to call from both `loadedmetadata` and the already-loaded sweep.
    */
   private initCell(cell: { video: HTMLVideoElement, start: number, end: number }): void {
+    // Release the load-queue slot as soon as this row's clip has actually
+    // started loading (not when the row is destroyed) -- a worker-pool "job
+    // done" signal. All tiles in a row share one clip file, so the first
+    // tile to fire `loadedmetadata` is the right moment; already a no-op on
+    // subsequent tiles/calls since releaseLoadSlot is cleared after firing.
+    this.releaseLoadSlot?.();
+    this.releaseLoadSlot = undefined;
+
     cell.video.muted = true; // set imperatively: [muted] binding is unreliable and blocks programmatic play()
     if (Math.abs(cell.video.currentTime - cell.start) > 0.01) {
       cell.video.currentTime = cell.start;
