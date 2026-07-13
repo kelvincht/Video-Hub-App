@@ -20,10 +20,25 @@
   width: 100%;
 }
 
-.segment-cell {
-  display: block;
+// direct flex child of .segments-row now (the video moved one level deeper);
+// carries the per-timestamp filmstrip crop as a background so a real,
+// timestamp-correct preview is visible immediately, before/while its video
+// is still loading
+.segment-cell-wrap {
+  background-repeat: no-repeat;
   flex: 0 0 auto;
+  position: relative;
+}
+
+.segment-cell {
+  background: transparent; // let the wrapper's filmstrip crop show through until a frame is decoded
+  display: block;
+  height: 100%;
+  left: 0;
   object-fit: cover;
+  position: absolute;
+  top: 0;
+  width: 100%;
 }
 
 .title {

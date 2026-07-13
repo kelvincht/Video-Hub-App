@@ -98,6 +98,9 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   });
 
   pathToClip = '';
+  // same filmstrip sprite filmstrip.component/full.component already use --
+  // lets every tile preview its own timestamp instead of a black tile while loading
+  filmstripPath = '';
   noError = true;
 
   private cleanupFns: (() => void)[] = [];
@@ -138,6 +141,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
     this.pathToClip = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash, true);
+    this.filmstripPath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', hash);
   }
 
   /**
@@ -283,10 +287,27 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     return (segmentIndex + 1) * this.video().duration / ((this.clipSnippets() || 1) + 1);
   }
 
+  /**
+   * CSS background-position-x (px) so this tile's filmstrip crop shows the
+   * frame closest to its own real timestamp, instead of a black tile while
+   * its video is still loading. Reuses the filmstrip sprite -- no new assets.
+   */
+  filmstripOffsetPx(segmentIndex: number): number {
+    const screens = Math.max(1, this.video()?.screens || 1);
+    const duration = this.video()?.duration || 1;
+    const timestamp = this.segmentSourceTime(segmentIndex);
+    const frameIndex = Math.min(screens - 1, Math.max(0, Math.round((timestamp / duration) * (screens - 1))));
+    return -(frameIndex * this.cellWidth());
+  }
+
+  // works whether the click landed on the always-present filmstrip wrapper
+  // (video not yet loaded) or the <video> rendered on top of it -- both
+  // carry the same [attr.data-seg]
   private segmentIndexFromEvent(event: MouseEvent): number {
-    const target = event.target;
-    if (target instanceof HTMLVideoElement && target.dataset.seg !== undefined) {
-      return parseInt(target.dataset.seg, 10);
+    const target = event.target as HTMLElement;
+    const seg = target?.dataset ? target.dataset['seg'] : undefined;
+    if (seg !== undefined) {
+      return parseInt(seg, 10);
     }
     return undefined;
   }
