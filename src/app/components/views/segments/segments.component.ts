@@ -1,5 +1,6 @@
 import type { AfterViewInit, ElementRef, OnDestroy, OnInit } from '@angular/core';
 import { Component, NgZone, computed, effect, input, output, viewChild } from '@angular/core';
+import { DomSanitizer } from '@angular/platform-browser';
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
@@ -116,6 +117,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
     public imageElementService: ImageElementService,
     private loadQueue: ClipLoadQueueService,
     private ngZone: NgZone,
+    public sanitizer: DomSanitizer,
   ) {
     // Mirrors clip.component's `@if(!autoplay()) / @if(autoplay())` template swap, which
     // naturally re-applies the current mode whenever the button is toggled. This component
