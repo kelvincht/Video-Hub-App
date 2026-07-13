@@ -8,6 +8,7 @@ import type { ImageElement } from '../../../../../interfaces/final-object.interf
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
 
 import { metaAppear, textAppear } from '../../../common/animations';
+import { releaseVideoDecoders } from '../../../common/release-video-decoders';
 
 // margin to stop just short of a snippet's end so a `timeupdate` (fires ~4x/s)
 // never bleeds into the next snippet of the concatenated clip
@@ -228,12 +229,8 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
-    // release decoder resources deterministically
-    this.eachVideo((v) => {
-      v.pause();
-      v.removeAttribute('src');
-      v.load();
-    });
+    const holder = this.segmentsHolder()?.nativeElement;
+    if (holder) { releaseVideoDecoders(holder); }
   }
 
   /**

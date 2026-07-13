@@ -29,6 +29,7 @@
           [poster]="sanitizer.bypassSecurityTrustUrl(folderPosterPaths[idx])"
           class="mini-video-thumb {{ 'folder-preview-' + idx }}"
           [volume]="forceMute() ? 0 : 1"
+          preload="metadata"
           onmouseover="this.play().catch((err) => {this.load()})"
           (mouseout)="stopPreview($event)"
           loop
@@ -44,6 +45,8 @@
           [poster]="sanitizer.bypassSecurityTrustUrl(folderPosterPaths[idx])"
           class="mini-video-thumb {{ 'folder-preview-' + idx }}"
           [volume]="forceMute() ? 0 : 1"
+          preload="metadata"
+          fetchpriority="low"
           onmouseover="this.muted = false;"
           onmouseout="this.muted = true;"
           onloadstart="this.muted = true;"
@@ -112,6 +115,7 @@
       (contextmenu)="rightClick.emit({ mouseEvent: $event, item: video })"
       class="screencap"
       [volume]="forceMute() ? 0 : 1"
+      preload="metadata"
       onmouseover="this.play().catch((err) => {this.load()})"
       (mouseout)="stopPreview($event)"
       loop
@@ -129,6 +133,8 @@
       (contextmenu)="rightClick.emit({ mouseEvent: $event, item: video })"
       class="screencap"
       [volume]="forceMute() ? 0 : 1"
+      preload="metadata"
+      fetchpriority="low"
       onmouseover="this.muted = false;"
       onmouseout="this.muted = true;"
       onloadstart="this.muted = true;"

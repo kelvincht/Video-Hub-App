@@ -1,5 +1,5 @@
-import { ChangeDetectorRef, input, output } from '@angular/core';
-import type { OnInit } from '@angular/core';
+import { ChangeDetectorRef, ElementRef, input, output } from '@angular/core';
+import type { OnDestroy, OnInit } from '@angular/core';
 import { Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -10,6 +10,7 @@ import type { ImageElement } from '../../../../../interfaces/final-object.interf
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
 
 import { metaAppear, textAppear } from '../../../common/animations';
+import { releaseVideoDecoders } from '../../../common/release-video-decoders';
 
 @Component({
   standalone: false,
@@ -23,7 +24,7 @@ import { metaAppear, textAppear } from '../../../common/animations';
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class ClipComponent implements OnInit {
+export class ClipComponent implements OnInit, OnDestroy {
 
   readonly rightClick = output<RightClickEmit>();
   readonly sheetClick = output<any>(); // does not emit data of any kind
@@ -56,6 +57,7 @@ export class ClipComponent implements OnInit {
 
   constructor(
     public cd: ChangeDetectorRef,
+    private elementRef: ElementRef<HTMLElement>,
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
     public sanitizer: DomSanitizer
@@ -110,6 +112,10 @@ export class ClipComponent implements OnInit {
       this.folderThumbPaths.push(this.pathToVideo);
       this.folderPosterPaths.push(this.poster);
     }
+  }
+
+  ngOnDestroy(): void {
+    releaseVideoDecoders(this.elementRef.nativeElement);
   }
 
   toggleHeart(mouseClick: PointerEvent): void {
