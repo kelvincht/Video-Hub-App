@@ -44,11 +44,11 @@
           [poster]="sanitizer.bypassSecurityTrustUrl(folderPosterPaths[idx])"
           class="mini-video-thumb {{ 'folder-preview-' + idx }}"
           [volume]="forceMute() ? 0 : 1"
-          onmouseover="this.muted = false;"
+          onmouseover="this.muted = false; this.play().catch(()=>{});"
           onmouseout="this.muted = true;"
           onloadstart="this.muted = true;"
+          (loadeddata)="onAutoplayReady($event)"
           loop
-          autoplay
         ></video>
       }
     }
@@ -129,10 +129,10 @@
       (contextmenu)="rightClick.emit({ mouseEvent: $event, item: video })"
       class="screencap"
       [volume]="forceMute() ? 0 : 1"
-      onmouseover="this.muted = false;"
+      onmouseover="this.muted = false; this.play().catch(()=>{});"
       onmouseout="this.muted = true;"
       onloadstart="this.muted = true;"
-      onloadeddata="setTimeout(() => { this.play(); }, Math.floor(Math.random() * 500))"
+      (loadeddata)="onAutoplayReady($event)"
       loop
     ></video>
   }

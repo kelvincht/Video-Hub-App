@@ -1,15 +1,17 @@
 import { ChangeDetectorRef, input, output } from '@angular/core';
-import type { OnInit } from '@angular/core';
+import type { OnDestroy, OnInit } from '@angular/core';
 import { Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
+import { VideoAutoplaySchedulerService } from './../../../services/video-autoplay-scheduler.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
 
 import { metaAppear, textAppear } from '../../../common/animations';
+import { createAutoplayStartTracker } from '../../../common/autoplay-start-tracker';
 
 @Component({
   standalone: false,
@@ -23,7 +25,7 @@ import { metaAppear, textAppear } from '../../../common/animations';
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class ClipComponent implements OnInit {
+export class ClipComponent implements OnInit, OnDestroy {
 
   readonly rightClick = output<RightClickEmit>();
   readonly sheetClick = output<any>(); // does not emit data of any kind
@@ -54,12 +56,17 @@ export class ClipComponent implements OnInit {
   poster: string;
   posterFolderType: any = 'clips';
 
+  private readonly autoplayTracker: ReturnType<typeof createAutoplayStartTracker>;
+
   constructor(
     public cd: ChangeDetectorRef,
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
-    public sanitizer: DomSanitizer
-  ) { }
+    public sanitizer: DomSanitizer,
+    private scheduler: VideoAutoplaySchedulerService,
+  ) {
+    this.autoplayTracker = createAutoplayStartTracker(this.scheduler);
+  }
 
   @HostListener('mouseenter') onMouseEnter() {
     this.hover = true;
@@ -70,6 +77,9 @@ export class ClipComponent implements OnInit {
   @HostListener('window:blur', ['$event'])
   onBlur(event: any): void {
     this.appInFocus = false;
+    // Angular's `@if(autoplay() && appInFocus)` is about to remove these video
+    // elements entirely -- cancel any not-yet-fired scheduled starts.
+    this.autoplayTracker.cancelAll();
   }
   @HostListener('window:focus', ['$event'])
   onFocus(event: any): void {
@@ -110,6 +120,27 @@ export class ClipComponent implements OnInit {
       this.folderThumbPaths.push(this.pathToVideo);
       this.folderPosterPaths.push(this.poster);
     }
+  }
+
+  /**
+   * Bound to `(loadeddata)` on every autoplay-mode <video> (folder previews +
+   * single clip). Defers the actual `.play()` to idle time via the scheduler --
+   * a fast scroll-through never pays for decode on rows already scrolled past
+   * (the scheduled start is cancelled on destroy/blur before it fires), but
+   * nothing is ever permanently blocked: once idle, every visible video plays.
+   * Hovering (see template) always plays immediately regardless of this.
+   */
+  onAutoplayReady(event: Event): void {
+    const video = event.target as HTMLVideoElement;
+    this.autoplayTracker.start(video, () => {
+      if (this.autoplay() && this.appInFocus) {
+        video.play().catch(() => {});
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.autoplayTracker.cancelAll();
   }
 
   toggleHeart(mouseClick: PointerEvent): void {

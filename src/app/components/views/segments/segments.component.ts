@@ -3,11 +3,13 @@ import { Component, NgZone, computed, effect, input, output, viewChild } from '@
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
+import { VideoAutoplaySchedulerService } from './../../../services/video-autoplay-scheduler.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
 
 import { metaAppear, textAppear } from '../../../common/animations';
+import { createAutoplayStartTracker } from '../../../common/autoplay-start-tracker';
 
 // margin to stop just short of a snippet's end so a `timeupdate` (fires ~4x/s)
 // never bleeds into the next snippet of the concatenated clip
@@ -101,12 +103,16 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   noError = true;
 
   private cleanupFns: (() => void)[] = [];
+  private readonly autoplayTracker: ReturnType<typeof createAutoplayStartTracker>;
 
   constructor(
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
     private ngZone: NgZone,
+    private scheduler: VideoAutoplaySchedulerService,
   ) {
+    this.autoplayTracker = createAutoplayStartTracker(this.scheduler);
+
     // Mirrors clip.component's `@if(!autoplay()) / @if(autoplay())` template swap, which
     // naturally re-applies the current mode whenever the button is toggled. This component
     // keeps one persistent <video> per cell (cheaper: N cells/row vs. clip view's 1),
@@ -120,11 +126,12 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
           if (!cell || v.readyState < 1) { return; } // not loaded yet -- initCell() will apply the current mode once it is
           if (wantAutoplay) {
             v.muted = true;
-            this.tryPlay(v);
+            this.tryAutoplayStart(v);
           } else {
             v.pause();
             v.muted = true;
             v.currentTime = cell.start; // back to the parked poster-frame state
+            this.autoplayTracker.cancel(v);
           }
         });
       });
@@ -187,15 +194,16 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       on('timeupdate', loopBack, true);
       on('ended', loopBack, true);
 
-      // hover-to-play (default mode); in autoplay mode hovering only unmutes
+      // hover always plays immediately, bypassing the idle scheduler entirely --
+      // a deliberate user action must never wait on an autoplay video that's
+      // still in its idle-scheduled holding period
       on('mouseover', (event: Event) => {
         const cell = this.asSegmentVideo(event.target);
         if (!cell) { return; }
+        cell.video.muted = this.forceMute() || false; // real hover is a user gesture, so sound is allowed
+        this.tryPlay(cell.video);
         if (this.autoplay()) {
-          cell.video.muted = this.forceMute() || false; // already playing; just unmute (real hover = user gesture)
-        } else {
-          cell.video.muted = this.forceMute() || false; // real hover is a user gesture, so sound is allowed
-          this.tryPlay(cell.video);
+          this.autoplayTracker.cancel(cell.video); // now playing directly; no need for the deferred start to also fire
         }
       }, false);
 
@@ -210,10 +218,13 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       }, false);
 
       // save the battery/fans when the app loses focus (autoplay mode)
-      const onBlur = () => this.eachVideo((v) => v.pause());
+      const onBlur = () => this.eachVideo((v) => {
+        v.pause();
+        this.autoplayTracker.cancel(v); // re-scheduled on focus via tryAutoplayStart
+      });
       const onFocus = () => {
         if (this.autoplay()) {
-          this.eachVideo((v) => this.tryPlay(v));
+          this.eachVideo((v) => this.tryAutoplayStart(v));
         }
       };
       window.addEventListener('blur', onBlur);
@@ -228,6 +239,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
+    this.autoplayTracker.cancelAll();
     // release decoder resources deterministically
     this.eachVideo((v) => {
       v.pause();
@@ -260,8 +272,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       cell.video.currentTime = cell.start;
     }
     if (this.autoplay() && cell.video.paused) {
-      // stagger starts so a screenful of rows does not spin up every decoder in one frame
-      setTimeout(() => this.tryPlay(cell.video), Math.floor(Math.random() * 500));
+      this.tryAutoplayStart(cell.video);
     }
   }
 
@@ -273,6 +284,22 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private tryPlay(video: HTMLVideoElement): void {
     video.play().catch(() => {}); // interrupted play() promises are expected noise
+  }
+
+  /**
+   * Idle-scheduled autoplay start -- only ever called from autoplay-driven code
+   * paths (initial start, effect() toggle-on, focus resume). Hover-triggered
+   * playback always uses `tryPlay()` directly, bypassing the scheduler, and
+   * must never go through here. Scrolling a row away before the idle slot
+   * arrives (see `autoplayTracker.cancel`) means it never starts at all -- a
+   * fast scroll-through never pays for decode on rows already passed.
+   */
+  private tryAutoplayStart(video: HTMLVideoElement): void {
+    this.autoplayTracker.start(video, () => {
+      if (this.autoplay()) {
+        this.tryPlay(video);
+      }
+    });
   }
 
   /**
