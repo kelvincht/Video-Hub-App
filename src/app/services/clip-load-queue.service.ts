@@ -29,13 +29,13 @@ export class ClipLoadQueueService {
   // ever be displayed -- since slots free up as soon as each load finishes
   // (not when a component leaves the screen), this only affects how many
   // loads race each other at once, not whether something eventually loads.
-  private readonly steadyStateMax = 10;
-  // A big, sudden burst (fresh search/hub load rendering dozens of rows at
-  // once) drains much faster with a temporarily wider gate -- reverts to
-  // steadyStateMax automatically once the backlog clears, so this doesn't
-  // loosen the steady-state (scrolling) protection at all.
-  private readonly burstMax = 30;
-  private readonly burstThreshold = 15; // queue depth that switches into burst mode
+  // (A queue-depth-based "burst mode" that temporarily widened this was tried
+  // and removed -- it let freshly-arrived requests skip ahead of everything
+  // already waiting once the queue got deep enough, which is exactly backwards
+  // from what a scrolling gallery needs. See the newest-first drain order
+  // below instead, which solves the same "fresh search should fill in
+  // reasonably quickly" problem without that failure mode.)
+  private readonly maxConcurrent = 10;
 
   // Caps how many components may hold an already-*loaded* clip resident at
   // once, independent of the above -- once a load finishes, its component
@@ -49,12 +49,13 @@ export class ClipLoadQueueService {
   private readonly residentCap = 80;
 
   private activeCount = 0;
+  // A stack, not a FIFO queue: drained newest-first (see release() below).
+  // In a scrolling gallery, "most recently requested" is a much better proxy
+  // for "currently relevant" than "requested earliest" -- a fixed FIFO here
+  // means content you've already scrolled past keeps loading ahead of what
+  // you're actually looking at now, since it simply asked first.
   private queue: Array<() => void> = [];
   private residentOrder: Array<{ evict: () => void }> = [];
-
-  private get effectiveMax(): number {
-    return this.queue.length > this.burstThreshold ? this.burstMax : this.steadyStateMax;
-  }
 
   /**
    * @param onAdmitted called once a slot is available (immediately, if one
@@ -72,7 +73,9 @@ export class ClipLoadQueueService {
       onAdmitted();
     };
 
-    if (this.activeCount < this.effectiveMax) {
+    // only ever admit directly when nothing is already waiting -- otherwise
+    // this request would silently cut in front of everything queued
+    if (this.queue.length === 0 && this.activeCount < this.maxConcurrent) {
       admit();
     } else {
       queuedEntry = admit;
@@ -83,7 +86,7 @@ export class ClipLoadQueueService {
       if (admitted) {
         this.activeCount--;
         admitted = false;
-        const next = this.queue.shift();
+        const next = this.queue.pop(); // newest-first
         if (next) {
           next();
         }
@@ -141,7 +144,7 @@ export class ClipLoadQueueService {
       }
       released = true;
       this.activeCount--;
-      const next = this.queue.shift();
+      const next = this.queue.pop(); // newest-first
       if (next) {
         next();
       }
