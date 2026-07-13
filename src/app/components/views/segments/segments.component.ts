@@ -4,7 +4,6 @@ import { DomSanitizer } from '@angular/platform-browser';
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
-import { ClipLoadQueueService } from './../../../services/clip-load-queue.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
@@ -101,21 +100,14 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   });
 
   pathToClip = '';
+  posterPath = '';
   noError = true;
 
-  // when false, [src] is unbound (poster background-image shown instead) --
-  // this row is queued behind the concurrency budget rather than actively
-  // loading/decoding its clip file.
-  canLoad = false;
-  posterPath = '';
-
   private cleanupFns: (() => void)[] = [];
-  private releaseLoadSlot: (() => void) | undefined;
 
   constructor(
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
-    private loadQueue: ClipLoadQueueService,
     private ngZone: NgZone,
     public sanitizer: DomSanitizer,
   ) {
@@ -150,13 +142,7 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
     this.pathToClip = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash, true);
-    // already-generated poster for the same clip -- shown while this row is
-    // queued behind the load concurrency budget, at zero extra cost
     this.posterPath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'clips', hash);
-
-    this.releaseLoadSlot = this.loadQueue.request(() => {
-      this.ngZone.run(() => { this.canLoad = true; });
-    });
   }
 
   /**
@@ -206,15 +192,10 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
       on('timeupdate', loopBack, true);
       on('ended', loopBack, true);
 
-      // hover-to-play (default mode); in autoplay mode hovering only unmutes.
-      // A queued row (canLoad false) must never make a deliberate hover wait
-      // on the load-concurrency budget either -- force-admit it immediately.
+      // hover-to-play (default mode); in autoplay mode hovering only unmutes
       on('mouseover', (event: Event) => {
         const cell = this.asSegmentVideo(event.target);
         if (!cell) { return; }
-        if (!this.canLoad) {
-          this.forceAdmitLoadSlot();
-        }
         if (this.autoplay()) {
           cell.video.muted = this.forceMute() || false; // already playing; just unmute (real hover = user gesture)
         } else {
@@ -252,19 +233,8 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
-    this.releaseLoadSlot?.();
     const holder = this.segmentsHolder()?.nativeElement;
     if (holder) { releaseVideoDecoders(holder); }
-  }
-
-  /**
-   * Bypass the load-concurrency queue entirely for a deliberate hover --
-   * replaces any outstanding normal request with a forced admission.
-   */
-  private forceAdmitLoadSlot(): void {
-    this.releaseLoadSlot?.();
-    this.releaseLoadSlot = this.loadQueue.forceAdmit();
-    this.ngZone.run(() => { this.canLoad = true; });
   }
 
   /**
@@ -286,14 +256,6 @@ export class SegmentsComponent implements OnInit, AfterViewInit, OnDestroy {
    * Idempotent — safe to call from both `loadedmetadata` and the already-loaded sweep.
    */
   private initCell(cell: { video: HTMLVideoElement, start: number, end: number }): void {
-    // Release the load-queue slot as soon as this row's clip has actually
-    // started loading (not when the row is destroyed) -- a worker-pool "job
-    // done" signal. All tiles in a row share one clip file, so the first
-    // tile to fire `loadedmetadata` is the right moment; already a no-op on
-    // subsequent tiles/calls since releaseLoadSlot is cleared after firing.
-    this.releaseLoadSlot?.();
-    this.releaseLoadSlot = undefined;
-
     cell.video.muted = true; // set imperatively: [muted] binding is unreliable and blocks programmatic play()
     if (Math.abs(cell.video.currentTime - cell.start) > 0.01) {
       cell.video.currentTime = cell.start;

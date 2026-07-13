@@ -27,7 +27,7 @@
       @for (i of segmentIndexes(); track i) {
         <video
           class="segment-cell"
-          [src]="canLoad ? pathToClip : null"
+          [src]="pathToClip"
           [poster]="sanitizer.bypassSecurityTrustUrl(posterPath)"
           [attr.data-seg]="i"
           muted

@@ -1,11 +1,10 @@
-import { ChangeDetectorRef, ElementRef, NgZone, input, output } from '@angular/core';
-import type { AfterViewInit, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, ElementRef, input, output } from '@angular/core';
+import type { OnDestroy, OnInit } from '@angular/core';
 import { Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
 import { FilePathService } from '../file-path.service';
 import { ImageElementService } from './../../../services/image-element.service';
-import { ClipLoadQueueService } from './../../../services/clip-load-queue.service';
 
 import type { ImageElement } from '../../../../../interfaces/final-object.interface';
 import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/shared-interfaces';
@@ -25,7 +24,7 @@ import { releaseVideoDecoders } from '../../../common/release-video-decoders';
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class ClipComponent implements OnInit, AfterViewInit, OnDestroy {
+export class ClipComponent implements OnInit, OnDestroy {
 
   readonly rightClick = output<RightClickEmit>();
   readonly sheetClick = output<any>(); // does not emit data of any kind
@@ -56,32 +55,16 @@ export class ClipComponent implements OnInit, AfterViewInit, OnDestroy {
   poster: string;
   posterFolderType: any = 'clips';
 
-  // when false, [src] is unbound in the template (the existing [poster] frame
-  // shows instead, at zero extra cost) -- this component is queued behind the
-  // load-concurrency budget rather than actively loading/decoding its clip(s).
-  canLoad = false;
-
-  private releaseLoadSlot: (() => void) | undefined;
-  private cleanupFns: (() => void)[] = [];
-
   constructor(
     public cd: ChangeDetectorRef,
     private elementRef: ElementRef<HTMLElement>,
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
-    private loadQueue: ClipLoadQueueService,
-    private ngZone: NgZone,
     public sanitizer: DomSanitizer
   ) { }
 
   @HostListener('mouseenter') onMouseEnter() {
     this.hover = true;
-    // a deliberate hover must never wait on the load-concurrency budget
-    if (!this.canLoad) {
-      this.releaseLoadSlot?.();
-      this.releaseLoadSlot = this.loadQueue.forceAdmit();
-      this.canLoad = true;
-    }
   }
   @HostListener('mouseleave') onMouseLeave() {
     this.hover = false;
@@ -129,41 +112,9 @@ export class ClipComponent implements OnInit, AfterViewInit, OnDestroy {
       this.folderThumbPaths.push(this.pathToVideo);
       this.folderPosterPaths.push(this.poster);
     }
-
-    // wrapped in ngZone.run: a later (queued, not immediate) admission can be
-    // triggered by another component's release happening outside Angular's
-    // zone (see ngAfterViewInit below), so this must re-enter the zone itself
-    // to make sure the resulting [src] binding update is picked up by CD
-    this.releaseLoadSlot = this.loadQueue.request(() => this.ngZone.run(() => { this.canLoad = true; }));
-  }
-
-  /**
-   * Release the load-queue slot as soon as this component's video has
-   * actually finished loading (not when it's destroyed) -- a worker-pool
-   * "job done" signal, not a visibility signal. Delegated + outside Angular's
-   * zone since `loadeddata` is a media event that doesn't need to trigger
-   * change detection itself; only the (rare, one-time) resulting slot
-   * hand-off to a queued component needs to run inside the zone, which the
-   * release call below re-enters explicitly.
-   */
-  ngAfterViewInit(): void {
-    this.ngZone.runOutsideAngular(() => {
-      const onLoadedData = () => {
-        this.ngZone.run(() => {
-          this.releaseLoadSlot?.();
-          this.releaseLoadSlot = undefined;
-        });
-      };
-      // media events do not bubble -> listen in capture phase on the host
-      this.elementRef.nativeElement.addEventListener('loadeddata', onLoadedData, true);
-      this.cleanupFns.push(() => this.elementRef.nativeElement.removeEventListener('loadeddata', onLoadedData, true));
-    });
   }
 
   ngOnDestroy(): void {
-    this.cleanupFns.forEach((fn) => fn());
-    this.cleanupFns = [];
-    this.releaseLoadSlot?.(); // no-op if already released via loadeddata
     releaseVideoDecoders(this.elementRef.nativeElement);
   }
 
