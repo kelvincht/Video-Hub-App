@@ -41,7 +41,7 @@
     "ng": "ng",
     "lint": "ng lint",
     "ng:serve": "ng serve",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps && node -e \"try{require('fs').chmodSync(require('./node_modules/@ffprobe-installer/ffprobe').path,0o755)}catch(e){console.log('ffprobe chmod skipped:',e.message)}\""
   },
   "dependencies": {
     "@ffprobe-installer/ffprobe": "2.1.2",
